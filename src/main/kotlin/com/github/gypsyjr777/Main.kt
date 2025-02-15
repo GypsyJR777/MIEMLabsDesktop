@@ -2,8 +2,11 @@ import androidx.compose.desktop.ui.tooling.preview.Preview
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -11,13 +14,22 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.nativeKeyCode
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.pointer.consumeAllChanges
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.loadImageBitmap
-import androidx.compose.ui.res.useResource
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -26,45 +38,73 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.skia.Image
+import org.jetbrains.skia.Rect
 
-// Класс для представления элемента схемы
-data class CircuitElement(val type: String, val x: Float, val y: Float)
+// Расширение для умножения Offset на скаляр
+operator fun Offset.times(scale: Float): Offset = Offset(x * scale, y * scale)
 
-@Composable
-@Preview
-fun App() {
-    var isLoggedIn by remember { mutableStateOf(false) }
-    var labsList by remember { mutableStateOf(emptyList<String>()) }
-    var selectedLab by remember { mutableStateOf<String?>(null) }
+// Модель для электрического элемента
+data class CircuitElement(
+    val id: Int,
+    val type: String,
+    var x: Float,
+    var y: Float,
+    val width: Float = 40f,
+    val height: Float = 40f
+) {
+    // Точка подключения – определяем как центр нижней границы
+    fun connectionPoint(): Offset = Offset(x, y + height / 2)
+}
 
-    if (!isLoggedIn) {
-        // Экран аутентификации
-        AuthenticationScreen(onLoginSuccess = { labs ->
-            labsList = labs
-            isLoggedIn = true
-        })
-    } else {
-        // Экран выбора лабораторных работ
-        LabsScreen(labs = labsList, onLabSelected = { lab ->
-            selectedLab = lab
-        })
+// Модель провода — хранит ссылки на соединённые элементы
+data class Wire(
+    val from: CircuitElement,
+    val to: CircuitElement
+)
+
+// Объект для хранения информации о соединениях
+data class CircuitConnections(val connections: Map<Int, List<Int>>)
+
+fun buildConnections(wires: List<Wire>): CircuitConnections {
+    val map = mutableMapOf<Int, MutableList<Int>>()
+    wires.forEach { wire ->
+        map.getOrPut(wire.from.id) { mutableListOf() }.add(wire.to.id)
+        map.getOrPut(wire.to.id) { mutableListOf() }.add(wire.from.id)
     }
-    // Если выбрана лабораторная работа, открываем окно редактора схемы
-    if (selectedLab != null) {
-        CircuitEditorWindow(labName = selectedLab!!, onClose = { selectedLab = null })
+    return CircuitConnections(map)
+}
+
+// Функция загрузки изображения из ресурсов
+@Composable
+fun loadSkiaImage(resourcePath: String): Image? {
+    return remember(resourcePath) {
+        val stream = Thread.currentThread().contextClassLoader.getResourceAsStream(resourcePath)
+        val bytes = stream?.readBytes() ?: return@remember null
+        Image.makeFromEncoded(bytes)
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
     var login by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val passwordFocusRequester = remember { FocusRequester() }
     val coroutineScope = rememberCoroutineScope()
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
+        modifier = Modifier.fillMaxSize().padding(16.dp)
+            .onPreviewKeyEvent { event ->
+                // Перехватываем Tab для переключения фокуса
+                if (event.key.keyCode == 9L) { // 9 = Tab, action 0 = KeyDown
+                    passwordFocusRequester.requestFocus()
+                    true
+                } else false
+            },
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -74,7 +114,13 @@ fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
             value = login,
             onValueChange = { login = it },
             label = { Text("Логин") },
-            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) }
+            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Text,
+                imeAction = ImeAction.Next
+            ),
+            keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() }),
+            modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
@@ -82,8 +128,31 @@ fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
             onValueChange = { password = it },
             label = { Text("Пароль") },
             visualTransformation = PasswordVisualTransformation(),
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) }
+            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Password,
+                imeAction = ImeAction.Done
+            ),
+            keyboardActions = KeyboardActions(onDone = {
+                if (login.isBlank() || password.isBlank()) {
+                    errorMessage = "Пожалуйста, заполните все поля"
+                } else {
+                    isLoading = true
+                    errorMessage = ""
+                    coroutineScope.launch {
+                        delay(1000)
+                        if (login == "user" && password == "password") {
+                            val labs = fetchLabsFromBackend()
+                            onLoginSuccess(labs)
+                        } else {
+                            errorMessage = "Неверный логин или пароль"
+                        }
+                        isLoading = false
+                    }
+                    focusManager.clearFocus()
+                }
+            }),
+            modifier = Modifier.focusRequester(passwordFocusRequester).fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(16.dp))
         if (errorMessage.isNotEmpty()) {
@@ -109,7 +178,8 @@ fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
                     }
                 }
             },
-            enabled = !isLoading
+            enabled = !isLoading,
+            modifier = Modifier.fillMaxWidth()
         ) {
             if (isLoading) {
                 CircularProgressIndicator(
@@ -131,9 +201,7 @@ suspend fun fetchLabsFromBackend(): List<String> {
 
 @Composable
 fun LabsScreen(labs: List<String>, onLabSelected: (String) -> Unit) {
-    Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Доступные лабораторные работы", style = MaterialTheme.typography.h4)
         Spacer(modifier = Modifier.height(16.dp))
         if (labs.isEmpty()) {
@@ -169,66 +237,218 @@ fun CircuitEditorWindow(labName: String, onClose: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun CircuitEditorScreen(labName: String) {
-    val prColor = MaterialTheme.colors.onPrimary
-    // Доступные компоненты для схемы
+    // Список доступных компонентов
     val availableComponents = listOf("Резистор", "Конденсатор", "Индуктор", "Источник питания")
-    // Состояние размещённых на доске элементов
+    // Состояние элементов и проводов
     val circuitElements = remember { mutableStateListOf<CircuitElement>() }
-    // Выбранный тип элемента для добавления
+    val wires = remember { mutableStateListOf<Wire>() }
+    // Выбранный тип для добавления
     var selectedElementType by remember { mutableStateOf<String?>(null) }
+    // Режим удаления
+    var isDeleteMode by remember { mutableStateOf(false) }
 
-    // Загружаем изображения для каждого компонента (файлы должны лежать в ресурсах)
-    val resistorImage = remember { useResource("res/resistor.png") { loadImageBitmap(it) } }
-    val capacitorImage = remember { useResource("res/capacitor.png") { loadImageBitmap(it) } }
-    val inductorImage = remember { useResource("res/inductor.png") { loadImageBitmap(it) } }
-    val powerSourceImage = remember { useResource("res/power_source.png") { loadImageBitmap(it) } }
+    // Для временного проводка (режим соединения)
+    var currentWireFrom by remember { mutableStateOf<CircuitElement?>(null) }
+    var currentWireEnd by remember { mutableStateOf<Offset?>(null) }
 
-    // Отображаем выбранное изображение по типу компонента
-    val componentImages = mapOf(
-        "Резистор" to resistorImage,
-        "Конденсатор" to capacitorImage,
-        "Индуктор" to inductorImage,
-        "Источник питания" to powerSourceImage
-    )
+    // Загрузка изображений (убедитесь, что пути верны)
+    val resistorImage = loadSkiaImage("res/resistor.png")
+    val capacitorImage = loadSkiaImage("res/capacitor.png")
+    val inductorImage = loadSkiaImage("res/inductor.png")
+    val powerImage = loadSkiaImage("res/power_source.png")
 
+    fun getImageForType(type: String): Image? = when (type) {
+        "Резистор" -> resistorImage
+        "Конденсатор" -> capacitorImage
+        "Индуктор" -> inductorImage
+        "Источник питания" -> powerImage
+        else -> null
+    }
+
+    // Функция поиска элемента по зоне соединения (узкая область в 10 пикселей от нижней границы)
+    fun findElementAtConnection(point: Offset, threshold: Float = 10f): CircuitElement? {
+        return circuitElements.find { element ->
+            val cp = element.connectionPoint()
+            val halfW = element.width / 2
+            (point.x in (element.x - halfW)..(element.x + halfW)) &&
+                    (point.y in (cp.y - threshold)..(cp.y + threshold))
+        }
+    }
+
+    // Функция расчета расстояния от точки до отрезка
+    fun distancePointToLineSegment(p: Offset, a: Offset, b: Offset): Float {
+        val A = p - a
+        val AB = b - a
+        val ab2 = AB.x * AB.x + AB.y * AB.y
+        val t = if (ab2 == 0f) 0f else (A.x * AB.x + A.y * AB.y) / ab2
+        val tClamped = t.coerceIn(0f, 1f)
+        val projection = a + Offset(AB.x * tClamped, AB.y * tClamped)
+        return (p - projection).getDistance()
+    }
+
+    // Если включен режим удаления, по клику удаляем элемент или провод
+    fun handleDeletion(offset: Offset) {
+        // Сначала проверяем провода
+        val wireHit = wires.find { wire ->
+            val d = distancePointToLineSegment(
+                p = offset,
+                a = wire.from.connectionPoint(),
+                b = wire.to.connectionPoint()
+            )
+            d < 10f
+        }
+        if (wireHit != null) {
+            wires.remove(wireHit)
+            return
+        }
+        // Ищем элемент по области (вся область элемента)
+        val elementHit = circuitElements.asReversed().find { element ->
+            val halfW = element.width / 2
+            val halfH = element.height / 2
+            offset.x in (element.x - halfW)..(element.x + halfW) &&
+                    offset.y in (element.y - halfH)..(element.y + halfH)
+        }
+        if (elementHit != null) {
+            // Удаляем элемент и все провода, связанные с ним
+            circuitElements.remove(elementHit)
+            wires.removeAll { it.from.id == elementHit.id || it.to.id == elementHit.id }
+        }
+    }
     Row(modifier = Modifier.fillMaxSize()) {
         // Левая часть – доска для создания схемы
+        // Единый обработчик жестов
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxHeight()
                 .background(Color(0xFFEFEFEF))
-                .pointerInput(selectedElementType) {
-                    detectTapGestures { offset ->
-                        selectedElementType?.let { type ->
-                            circuitElements.add(CircuitElement(type, offset.x, offset.y))
+                .pointerInput(Unit) {
+                    forEachGesture {
+                        awaitPointerEventScope {
+                            val down = awaitFirstDown()
+                            val offset = down.position
+
+                            if (isDeleteMode) {
+                                // В режиме удаления по клику удаляем провод или элемент
+                                handleDeletion(offset)
+                            } else {
+                                // Если клик в зоне соединения, начинаем соединение
+                                val cpElement = findElementAtConnection(offset)
+                                if (cpElement != null) {
+                                    currentWireFrom = cpElement
+                                    currentWireEnd = cpElement.connectionPoint()
+                                    // Обновляем конец проводка в цикле (без задержки)
+                                    while (true) {
+                                        val event = awaitPointerEvent()
+                                        val delta = event.changes.first().positionChange()
+                                        currentWireEnd = currentWireEnd!! + delta
+                                        event.changes.forEach { it.consumeAllChanges() }
+                                        if (event.changes.all { !it.pressed }) break
+                                    }
+                                    currentWireFrom?.let { fromElement ->
+                                        currentWireEnd?.let { endPos ->
+                                            val target = findElementAtConnection(endPos)
+                                            if (target != null && target.id != fromElement.id) {
+                                                wires.add(Wire(from = fromElement, to = target))
+                                            }
+                                        }
+                                    }
+                                    currentWireFrom = null
+                                    currentWireEnd = null
+                                }
+                                // Если клик внутри элемента (но не в зоне соединения) – перемещаем его
+                                else {
+                                    val moveElement = circuitElements.asReversed().find { element ->
+                                        val halfW = element.width / 2
+                                        val halfH = element.height / 2
+                                        offset.x in (element.x - halfW)..(element.x + halfW) &&
+                                                offset.y in (element.y - halfH)..(element.y + halfH)
+                                    }
+                                    if (moveElement != null) {
+                                        // Мгновенное перемещение – обновляем позицию в цикле
+                                        while (true) {
+                                            val event = awaitPointerEvent()
+                                            val delta = event.changes.first().positionChange()
+                                            moveElement.x += delta.x
+                                            moveElement.y += delta.y
+                                            event.changes.forEach { it.consumeAllChanges() }
+                                            if (event.changes.all { !it.pressed }) break
+                                        }
+                                    }
+                                    // Если клик по пустому месту – добавляем новый элемент (при выбранном типе)
+                                    else {
+                                        if (selectedElementType != null) {
+                                            val newId = circuitElements.size + 1
+                                            circuitElements.add(
+                                                CircuitElement(
+                                                    id = newId,
+                                                    type = selectedElementType!!,
+                                                    x = offset.x,
+                                                    y = offset.y
+                                                )
+                                            )
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
+                // Рисуем зафиксированные провода (на основе connectionPoint элементов)
+                wires.forEach { wire ->
+                    drawLine(
+                        color = Color.Black,
+                        start = wire.from.connectionPoint(),
+                        end = wire.to.connectionPoint(),
+                        strokeWidth = 3f
+                    )
+                }
+                // Рисуем временный провод, если он создается
+                if (currentWireFrom != null && currentWireEnd != null) {
+                    drawLine(
+                        color = Color.Gray,
+                        start = currentWireFrom!!.connectionPoint(),
+                        end = currentWireEnd!!,
+                        strokeWidth = 2f
+                    )
+                }
+                // Рисуем элементы
                 circuitElements.forEach { element ->
-                    // Если для данного типа есть изображение, отрисовываем его, иначе - рисуем круг
-                    val image = componentImages[element.type]
-                    if (image != null) {
-                        // Центрируем изображение относительно точки касания
-                        drawImage(
-                            image = image,
-                            topLeft = Offset(element.x - image.width / 2f, element.y - image.height / 2f)
-                        )
-                    } else {
+                    drawIntoCanvas { canvas ->
+                        val skCanvas = canvas.nativeCanvas
+                        val image = getImageForType(element.type)
+                        if (image != null) {
+                            val dstRect = Rect.makeXYWH(
+                                element.x - element.width / 2,
+                                element.y - element.height / 2,
+                                element.width,
+                                element.height
+                            )
+                            skCanvas.drawImageRect(image, dstRect)
+                        }
+                        // Для отладки – точка подключения
                         drawCircle(
-                            color = prColor,
-                            radius = 20f,
-                            center = Offset(element.x, element.y)
+                            color = Color.Red,
+                            radius = 4f,
+                            center = element.connectionPoint()
                         )
                     }
                 }
             }
         }
-        // Правая часть – меню выбора компонентов
+
+        // Вычисляем и отображаем информацию о соединениях
+        val connectionInfo = buildConnections(wires)
+        val connectionText = connectionInfo.connections.entries.joinToString(separator = "\n") { (id, list) ->
+            "Элемент $id соединён с: ${list.joinToString(", ")}"
+        }
+
+        // Боковая панель
         Column(
             modifier = Modifier
                 .width(200.dp)
@@ -245,14 +465,58 @@ fun CircuitEditorScreen(labName: String) {
                     Text(component)
                 }
             }
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { isDeleteMode = !isDeleteMode },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            ) {
+                Text(if (isDeleteMode) "Delete Mode ON" else "Delete Mode OFF")
+            }
             Spacer(modifier = Modifier.height(16.dp))
             Text("Выбранный элемент: ${selectedElementType ?: "нет"}")
+            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                "Подсказка:\n" +
+                        " - Клик в узкой зоне нижнего края элемента начинает соединение.\n" +
+                        " - Клик внутри элемента (но не в зоне соединения) позволяет перемещать его.\n" +
+                        " - Клик по пустому месту добавит новый элемент (если выбран тип).\n" +
+                        " - В режиме Delete Mode клик по элементу или проводу удаляет их."
+            )
         }
     }
 }
 
+@Preview
+@Composable
+fun PreviewCircuitEditor() {
+    MaterialTheme {
+        CircuitEditorScreen("Лабораторная работа 1")
+    }
+}
+
+@Composable
+fun App() {
+    var isLoggedIn by remember { mutableStateOf(false) }
+    var labsList by remember { mutableStateOf(emptyList<String>()) }
+    var selectedLab by remember { mutableStateOf<String?>(null) }
+
+    if (!isLoggedIn) {
+        AuthenticationScreen(onLoginSuccess = { labs ->
+            labsList = labs
+            isLoggedIn = true
+        })
+    } else {
+        LabsScreen(labs = labsList, onLabSelected = { lab ->
+            selectedLab = lab
+        })
+    }
+    if (selectedLab != null) {
+        CircuitEditorWindow(labName = selectedLab!!, onClose = { selectedLab = null })
+    }
+}
+
 fun main() = application {
-    // Главное окно приложения
     Window(onCloseRequest = ::exitApplication, title = "Kotlin Multiplatform Desktop App") {
         MaterialTheme {
             App()
