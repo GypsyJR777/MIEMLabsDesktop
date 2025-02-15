@@ -15,8 +15,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.res.loadImageBitmap
+import androidx.compose.ui.res.useResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -25,9 +26,6 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.jetbrains.skia.Font
-import org.jetbrains.skia.Paint
-import org.jetbrains.skia.Typeface
 
 // Класс для представления элемента схемы
 data class CircuitElement(val type: String, val x: Float, val y: Float)
@@ -173,12 +171,27 @@ fun CircuitEditorWindow(labName: String, onClose: () -> Unit) {
 
 @Composable
 fun CircuitEditorScreen(labName: String) {
+    val prColor = MaterialTheme.colors.onPrimary
     // Доступные компоненты для схемы
     val availableComponents = listOf("Резистор", "Конденсатор", "Индуктор", "Источник питания")
     // Состояние размещённых на доске элементов
     val circuitElements = remember { mutableStateListOf<CircuitElement>() }
     // Выбранный тип элемента для добавления
     var selectedElementType by remember { mutableStateOf<String?>(null) }
+
+    // Загружаем изображения для каждого компонента (файлы должны лежать в ресурсах)
+    val resistorImage = remember { useResource("res/resistor.png") { loadImageBitmap(it) } }
+    val capacitorImage = remember { useResource("res/capacitor.png") { loadImageBitmap(it) } }
+    val inductorImage = remember { useResource("res/inductor.png") { loadImageBitmap(it) } }
+    val powerSourceImage = remember { useResource("res/power_source.png") { loadImageBitmap(it) } }
+
+    // Отображаем выбранное изображение по типу компонента
+    val componentImages = mapOf(
+        "Резистор" to resistorImage,
+        "Конденсатор" to capacitorImage,
+        "Индуктор" to inductorImage,
+        "Источник питания" to powerSourceImage
+    )
 
     Row(modifier = Modifier.fillMaxSize()) {
         // Левая часть – доска для создания схемы
@@ -197,27 +210,19 @@ fun CircuitEditorScreen(labName: String) {
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
                 circuitElements.forEach { element ->
-                    // Отрисовка компонента на доске
-                    drawCircle(
-                        color = Color(0xF4EFEAEF),
-                        radius = 20f,
-                        center = Offset(element.x, element.y)
-                    )
-                    // Отрисовка текста с названием компонента
-                    drawIntoCanvas { canvas ->
-                        val skCanvas = canvas.nativeCanvas
-                        // Создаем объект Font из Skia, используя шрифт по умолчанию
-                        val skFont = Font(Typeface.makeEmpty(), (14 * density).toFloat())
-                        // Создаем объект Paint для задания цвета
-                        val skPaint = Paint().apply {
-                            color = 0xFF000000.toInt() // Черный цвет
-                        }
-                        skCanvas.drawString(
-                            element.type,
-                            element.x - 20,
-                            element.y - 25,
-                            skFont,
-                            skPaint
+                    // Если для данного типа есть изображение, отрисовываем его, иначе - рисуем круг
+                    val image = componentImages[element.type]
+                    if (image != null) {
+                        // Центрируем изображение относительно точки касания
+                        drawImage(
+                            image = image,
+                            topLeft = Offset(element.x - image.width / 2f, element.y - image.height / 2f)
+                        )
+                    } else {
+                        drawCircle(
+                            color = prColor,
+                            radius = 20f,
+                            center = Offset(element.x, element.y)
                         )
                     }
                 }
