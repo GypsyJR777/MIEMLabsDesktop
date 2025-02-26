@@ -1,8 +1,6 @@
-import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
+package com.github.gypsyjr777
+
+import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.*
@@ -10,6 +8,8 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.*
@@ -20,10 +20,10 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.nativeKeyCode
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.consumeAllChanges
 import androidx.compose.ui.input.pointer.pointerInput
@@ -36,10 +36,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
+import io.ktor.http.*
+import io.ktor.server.engine.*
+import io.ktor.server.netty.*
+import io.ktor.server.request.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+import kotlinx.coroutines.*
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
+import java.awt.Desktop
+import java.net.URI
 
 // Расширение для умножения Offset на скаляр
 operator fun Offset.times(scale: Float): Offset = Offset(x * scale, y * scale)
@@ -76,122 +83,106 @@ fun buildConnections(wires: List<Wire>): CircuitConnections {
 }
 
 // Функция загрузки изображения из ресурсов
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun loadSkiaImage(resourcePath: String): Image? {
     return remember(resourcePath) {
         val stream = Thread.currentThread().contextClassLoader.getResourceAsStream(resourcePath)
         val bytes = stream?.readBytes() ?: return@remember null
-        Image.makeFromEncoded(bytes)
+        org.jetbrains.skia.Image.makeFromEncoded(bytes)
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
-    var login by remember { mutableStateOf("") }
-    var password by remember { mutableStateOf("") }
+    // Запускаем временный сервер на порту 8080
+    var autoToken by remember { mutableStateOf<String?>(null) }
+    var manualToken by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    val focusManager = LocalFocusManager.current
-    val passwordFocusRequester = remember { FocusRequester() }
     val coroutineScope = rememberCoroutineScope()
 
+    DisposableEffect(Unit) {
+        val server = embeddedServer(Netty, port = 8085, host = "127.0.0.1") {
+            routing {
+                get("/") {
+                    val codeIn = call.request.cookies["JWT"]
+                    if (codeIn != null) {
+                        call.respondText(
+                            "Аутентификация успешна. Код авторизации: $codeIn",
+                            ContentType.Text.Plain
+                        )
+                        autoToken = codeIn
+                    } else {
+                        call.respondText(
+                            "Ошибка: код не получен. Пожалуйста, почистите Cookie",
+                            ContentType.Text.Plain
+                        )
+                        autoToken = ""
+                    }
+                    isLoading = false
+                }
+            }
+        }.start(wait = false)
+        onDispose {
+            server.stop(1000, 2000)
+        }
+    }
+
+    Desktop.getDesktop().browse(URI("http://127.0.0.1:8082/oauth/login/hse"))
     Column(
-        modifier = Modifier.fillMaxSize().padding(16.dp)
-            .onPreviewKeyEvent { event ->
-                // Перехватываем Tab для переключения фокуса
-                if (event.key.keyCode == 9L) { // 9 = Tab, action 0 = KeyDown
-                    passwordFocusRequester.requestFocus()
-                    true
-                } else false
-            },
-        verticalArrangement = Arrangement.Center,
+        modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Text("Аутентификация", style = MaterialTheme.typography.h4)
         Spacer(modifier = Modifier.height(16.dp))
-        OutlinedTextField(
-            value = login,
-            onValueChange = { login = it },
-            label = { Text("Логин") },
-            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Text,
-                imeAction = ImeAction.Next
-            ),
-            keyboardActions = KeyboardActions(onNext = { passwordFocusRequester.requestFocus() }),
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-        OutlinedTextField(
-            value = password,
-            onValueChange = { password = it },
-            label = { Text("Пароль") },
-            visualTransformation = PasswordVisualTransformation(),
-            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-            keyboardOptions = KeyboardOptions(
-                keyboardType = KeyboardType.Password,
-                imeAction = ImeAction.Done
-            ),
-            keyboardActions = KeyboardActions(onDone = {
-                if (login.isBlank() || password.isBlank()) {
-                    errorMessage = "Пожалуйста, заполните все поля"
-                } else {
-                    isLoading = true
-                    errorMessage = ""
-                    coroutineScope.launch {
-                        delay(1000)
-                        if (login == "user" && password == "password") {
-                            val labs = fetchLabsFromBackend()
-                            onLoginSuccess(labs)
-                        } else {
-                            errorMessage = "Неверный логин или пароль"
-                        }
-                        isLoading = false
-                    }
-                    focusManager.clearFocus()
-                }
-            }),
-            modifier = Modifier.focusRequester(passwordFocusRequester).fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        if (errorMessage.isNotEmpty()) {
-            Text(errorMessage, color = MaterialTheme.colors.error)
-            Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = {
+            // Открываем браузер для аутентификации
+            Desktop.getDesktop().browse(URI("http://127.0.0.1:8082/oauth/login/hse"))
+        }) {
+            Text("Открыть браузер для аутентификации")
         }
-        Button(
-            onClick = {
-                if (login.isBlank() || password.isBlank()) {
-                    errorMessage = "Пожалуйста, заполните все поля"
+        Spacer(modifier = Modifier.height(16.dp))
+        if (isLoading) {
+            CircularProgressIndicator()
+            Spacer(modifier = Modifier.height(8.dp))
+            Text("Ожидаем автоматический возврат токена...")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        if (autoToken != null) {
+            Text("Токен получен автоматически:")
+            Text(autoToken!!, color = Color.Green)
+            // Передаем токен дальше в приложение
+            onTokenReceived(autoToken!!)
+            onLoginSuccess
+        } else {
+            OutlinedTextField(
+                value = manualToken,
+                onValueChange = { manualToken = it },
+                label = { Text("Вставьте код аутентификации") },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = {
+                if (manualToken.isBlank()) {
+                    errorMessage = "Введите код аутентификации"
                 } else {
-                    isLoading = true
-                    errorMessage = ""
-                    coroutineScope.launch {
-                        delay(1000)
-                        if (login == "user" && password == "password") {
-                            val labs = fetchLabsFromBackend()
-                            onLoginSuccess(labs)
-                        } else {
-                            errorMessage = "Неверный логин или пароль"
-                        }
-                        isLoading = false
-                    }
+                    onTokenReceived(manualToken)
                 }
-            },
-            enabled = !isLoading,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            if (isLoading) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(20.dp),
-                    strokeWidth = 2.dp,
-                    color = MaterialTheme.colors.onPrimary
-                )
-            } else {
-                Text("Войти")
+            }) {
+                Text("Подтвердить")
+            }
+            if (errorMessage.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(errorMessage, color = Color.Red)
             }
         }
     }
+}
+
+fun onTokenReceived(token: String) {
+
 }
 
 suspend fun fetchLabsFromBackend(): List<String> {
@@ -484,14 +475,6 @@ fun CircuitEditorScreen(labName: String) {
                         " - В режиме Delete Mode клик по элементу или проводу удаляет их."
             )
         }
-    }
-}
-
-@Preview
-@Composable
-fun PreviewCircuitEditor() {
-    MaterialTheme {
-        CircuitEditorScreen("Лабораторная работа 1")
     }
 }
 
