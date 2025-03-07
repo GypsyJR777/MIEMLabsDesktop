@@ -1,52 +1,62 @@
 package com.github.gypsyjr777
 
-import androidx.compose.foundation.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.pointer.consumeAllChanges
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
+import com.github.gypsyjr777.model.StudentElectronicLabRq
+import io.ktor.client.*
+import io.ktor.client.call.*
+import io.ktor.client.engine.cio.*
+import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.request.*
+import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.serialization.jackson.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
-import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import java.awt.Desktop
 import java.net.URI
+
+val client = HttpClient(CIO) {
+    install(ContentNegotiation) {
+        jackson()
+    }
+}
+
+object AuthInfo {
+    var token: String? = null
+    var id: String? = null
+    var studentName: String? = null
+    var group: String? = null
+}
 
 // Расширение для умножения Offset на скаляр
 operator fun Offset.times(scale: Float): Offset = Offset(x * scale, y * scale)
@@ -92,11 +102,11 @@ fun loadSkiaImage(resourcePath: String): Image? {
         org.jetbrains.skia.Image.makeFromEncoded(bytes)
     }
 }
+// Запускаем временный сервер на порту 8080
 
 @Composable
 fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
-    // Запускаем временный сервер на порту 8080
-    var autoToken by remember { mutableStateOf<String?>(null) }
+    var token by remember { mutableStateOf<String?>(null) }
     var manualToken by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf("") }
@@ -112,13 +122,13 @@ fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
                             "Аутентификация успешна. Код авторизации: $codeIn",
                             ContentType.Text.Plain
                         )
-                        autoToken = codeIn
+                        token = codeIn
                     } else {
                         call.respondText(
                             "Ошибка: код не получен. Пожалуйста, почистите Cookie",
                             ContentType.Text.Plain
                         )
-                        autoToken = ""
+                        token = ""
                     }
                     isLoading = false
                 }
@@ -149,12 +159,15 @@ fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
             Text("Ожидаем автоматический возврат токена...")
         }
         Spacer(modifier = Modifier.height(16.dp))
-        if (autoToken != null) {
+        if (token != null) {
             Text("Токен получен автоматически:")
-            Text(autoToken!!, color = Color.Green)
+            Text(token!!, color = Color.Green)
             // Передаем токен дальше в приложение
-            onTokenReceived(autoToken!!)
-            onLoginSuccess
+            AuthInfo.token = token!!
+            if (onTokenReceived(token!!))
+                onLoginSuccess(getAllLabs(token!!))
+            else
+                errorMessage = "Ошибка: код не получен. Пожалуйста, почистите Cookie"
         } else {
             OutlinedTextField(
                 value = manualToken,
@@ -168,7 +181,11 @@ fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
                 if (manualToken.isBlank()) {
                     errorMessage = "Введите код аутентификации"
                 } else {
-                    onTokenReceived(manualToken)
+                    AuthInfo.token = manualToken
+                    if (onTokenReceived(manualToken))
+                        onLoginSuccess(getAllLabs(AuthInfo.token!!))
+                    else
+                        errorMessage = "Ошибка: код не получен. Пожалуйста, почистите Cookie"
                 }
             }) {
                 Text("Подтвердить")
@@ -181,8 +198,43 @@ fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
     }
 }
 
-fun onTokenReceived(token: String) {
+fun getAllLabs(token: String): List<String> = runBlocking {
+    val response: HttpResponse = client.get("http://127.0.0.1:8082/lab/electronic/get/all") {
+        cookie("JWT", AuthInfo.token!!)
+        header("Content-Type", "application/json")
+        setBody(StudentElectronicLabRq())
+    }.call.response
 
+    when (response.status) {
+        HttpStatusCode.Unauthorized -> emptyList()
+        HttpStatusCode.OK -> {
+            val result: Map<String, Any> = response.call.body()
+            (result["labs"] as String).split(",")
+        }
+
+        else -> throw RuntimeException("Непредвиденная ошибка")
+    }
+}
+
+// Simplified onTokenReceived function
+fun onTokenReceived(token: String): Boolean = runBlocking {
+    val response: HttpResponse = client.post("http://127.0.0.1:8082/") {
+        cookie("JWT", token)
+        renderCookieHeader(Cookie("JWT", token))
+    }.call.response
+
+    when (response.status) {
+        HttpStatusCode.Unauthorized -> return@runBlocking false
+        HttpStatusCode.Accepted -> {
+            val decodedToken = JWTParser.decode(token)
+            AuthInfo.id = decodedToken["email_hse"].toString()
+            AuthInfo.group = decodedToken["student_group_name"].toString()
+            AuthInfo.studentName = decodedToken["name"].toString()
+            return@runBlocking true
+        }
+
+        else -> throw RuntimeException("Непредвиденная ошибка")
+    }
 }
 
 suspend fun fetchLabsFromBackend(): List<String> {
