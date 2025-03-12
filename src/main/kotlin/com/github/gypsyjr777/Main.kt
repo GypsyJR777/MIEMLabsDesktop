@@ -26,6 +26,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
+import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import com.github.gypsyjr777.model.LabDTO
@@ -42,12 +43,16 @@ import io.ktor.server.engine.*
 import io.ktor.server.netty.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.coroutines.delay
+import io.ktor.utils.io.*
+import io.ktor.utils.io.jvm.javaio.*
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import java.awt.Desktop
+import java.io.File
 import java.net.URI
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 
 val client = HttpClient(CIO) {
     install(ContentNegotiation) {
@@ -60,6 +65,7 @@ object AuthInfo {
     var id: String? = null
     var studentName: String? = null
     var group: String? = null
+    var staff: Boolean? = null
 }
 
 // Расширение для умножения Offset на скаляр
@@ -109,7 +115,7 @@ fun loadSkiaImage(resourcePath: String): Image? {
 // Запускаем временный сервер на порту 8080
 
 @Composable
-fun AuthenticationScreen(onLoginSuccess: (List<LabDTO>) -> Unit) {
+fun AuthenticationScreen(onLoginSuccess: (List<LabDTO>, Boolean) -> Unit) {
     var token by remember { mutableStateOf<String?>(null) }
     var manualToken by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
@@ -169,7 +175,7 @@ fun AuthenticationScreen(onLoginSuccess: (List<LabDTO>) -> Unit) {
             // Передаем токен дальше в приложение
             AuthInfo.token = token!!
             if (onTokenReceived(token!!))
-                onLoginSuccess(getAllLabs(token!!))
+                onLoginSuccess(getAllLabs(token!!), AuthInfo.staff!!)
             else
                 errorMessage = "Ошибка: код не получен. Пожалуйста, почистите Cookie"
         } else {
@@ -187,7 +193,7 @@ fun AuthenticationScreen(onLoginSuccess: (List<LabDTO>) -> Unit) {
                 } else {
                     AuthInfo.token = manualToken
                     if (onTokenReceived(manualToken))
-                        onLoginSuccess(getAllLabs(AuthInfo.token!!))
+                        onLoginSuccess(getAllLabs(AuthInfo.token!!), AuthInfo.staff!!)
                     else
                         errorMessage = "Ошибка: код не получен. Пожалуйста, почистите Cookie"
                 }
@@ -236,16 +242,12 @@ fun onTokenReceived(token: String): Boolean = runBlocking {
             AuthInfo.id = decodedToken["email_hse"].toString()
             AuthInfo.group = decodedToken["student_group_name"].toString()
             AuthInfo.studentName = decodedToken["name"].toString()
+            AuthInfo.staff = decodedToken["staff"] == true
             return@runBlocking true
         }
 
         else -> throw RuntimeException("Непредвиденная ошибка")
     }
-}
-
-suspend fun fetchLabsFromBackend(): List<String> {
-    delay(1000)
-    return listOf("Лабораторная работа 1", "Лабораторная работа 2", "Лабораторная работа 3")
 }
 
 @Composable
@@ -285,12 +287,30 @@ fun LabsScreen(labs: List<LabDTO>, onLabSelected: (LabDTO) -> Unit) {
     }
 }
 
+@OptIn(InternalAPI::class)
 @Composable
 fun CircuitEditorWindow(lab: LabDTO, onClose: () -> Unit) {
+    // Скачиваем файл с описанием лабораторной работы
+    LaunchedEffect(lab) {
+        val response: HttpResponse = client.get("http://127.0.0.1:8082/lab/electronic/get") {
+            cookie("JWT", AuthInfo.token!!)
+            header("Content-Type", "application/json")
+            setBody(StudentElectronicLabRq(lab.labName, lab.labId))
+        }
+
+        if (response.status == HttpStatusCode.OK) {
+            val tempFile = File.createTempFile("lab_description", ".pdf")
+            Files.copy(response.rawContent.toInputStream(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            Desktop.getDesktop().open(tempFile)
+        } else {
+            println("Ошибка при скачивании файла: ${response.status}")
+        }
+    }
+
     Window(
         onCloseRequest = onClose,
         title = "Редактор схемы - ${lab.labName}",
-        state = WindowState(width = 1000.dp, height = 600.dp)
+        state = WindowState(placement = WindowPlacement.Fullscreen)
     ) {
         MaterialTheme {
             CircuitEditorScreen(lab)
@@ -541,16 +561,37 @@ fun CircuitEditorScreen(lab: LabDTO) {
 }
 
 @Composable
+fun StaffMenuScreen() {
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Меню сотрудника", style = MaterialTheme.typography.h4)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { /* Логика добавления лабораторной работы */ }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text("Добавить лабораторную работу")
+        }
+        Button(onClick = { /* Логика изменения данных о лабораторной работе */ }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text("Изменить данные о лабораторной работе")
+        }
+        Button(onClick = { /* Логика просмотра списка результатов студентов */ }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text("Посмотреть список результатов студентов")
+        }
+    }
+}
+
+@Composable
 fun App() {
     var isLoggedIn by remember { mutableStateOf(false) }
+    var isStaff by remember { mutableStateOf(false) }
     var labsList by remember { mutableStateOf(emptyList<LabDTO>()) }
     var selectedLab by remember { mutableStateOf<LabDTO?>(null) }
 
     if (!isLoggedIn) {
-        AuthenticationScreen(onLoginSuccess = { labs ->
+        AuthenticationScreen(onLoginSuccess = { labs, staff ->
             labsList = labs
+            isStaff = staff
             isLoggedIn = true
         })
+    } else if (isStaff) {
+        StaffMenuScreen()
     } else {
         LabsScreen(labs = labsList, onLabSelected = { lab ->
             selectedLab = lab

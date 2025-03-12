@@ -17,4 +17,13 @@ class StudentElectronicLabRq(
             groupNum = AuthInfo.group!!,
         )
 
+    constructor(labName: String, labId:String) :
+        this(
+            studentId = AuthInfo.id!!,
+            studentName = AuthInfo.studentName!!,
+            groupNum = AuthInfo.group!!,
+            labName = labName,
+            labId = labId
+        )
+
 }
