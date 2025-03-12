@@ -9,6 +9,9 @@ import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -254,6 +257,7 @@ fun LabsScreen(labs: List<LabDTO>, onLabSelected: (LabDTO) -> Unit) {
             Text("Нет доступных лабораторных работ")
         } else {
             labs.forEach { lab ->
+                var isExpanded by remember { mutableStateOf(false) }
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -261,8 +265,19 @@ fun LabsScreen(labs: List<LabDTO>, onLabSelected: (LabDTO) -> Unit) {
                         .clickable { onLabSelected(lab) },
                     elevation = 4.dp
                 ) {
-                    Row(modifier = Modifier.padding(16.dp)) {
-                        Text(lab.labName)
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(lab.labName, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { isExpanded = !isExpanded }) {
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (isExpanded) "Скрыть описание" else "Показать описание"
+                                )
+                            }
+                        }
+                        if (isExpanded) {
+                            Text(lab.description, style = MaterialTheme.typography.body2)
+                        }
                     }
                 }
             }
