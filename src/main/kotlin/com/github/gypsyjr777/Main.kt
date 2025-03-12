@@ -53,6 +53,8 @@ import java.io.File
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import javax.swing.JFileChooser
+import javax.swing.filechooser.FileNameExtensionFilter
 
 val client = HttpClient(CIO) {
     install(ContentNegotiation) {
@@ -564,6 +566,7 @@ fun CircuitEditorScreen(lab: LabDTO) {
 fun AdminLabsScreen(onBack: () -> Unit) {
     var labsList by remember { mutableStateOf(emptyList<LabDTO>()) }
     var isLoading by remember { mutableStateOf(true) }
+    var selectedLab by remember { mutableStateOf<LabDTO?>(null) }
 
     LaunchedEffect(Unit) {
         val response: HttpResponse = client.get("http://127.0.0.1:8082/admin/labs") {
@@ -593,8 +596,108 @@ fun AdminLabsScreen(onBack: () -> Unit) {
             Text("Нет доступных лабораторных работ")
         } else {
             labsList.forEach { lab ->
-                Text(lab.labName, style = MaterialTheme.typography.body1)
-                Spacer(modifier = Modifier.height(8.dp))
+                var isExpanded by remember { mutableStateOf(false) }
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .clickable { selectedLab = lab },
+                    elevation = 4.dp
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(lab.labName, modifier = Modifier.weight(1f))
+                            IconButton(onClick = { isExpanded = !isExpanded }) {
+                                Icon(
+                                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                    contentDescription = if (isExpanded) "Скрыть описание" else "Показать описание"
+                                )
+                            }
+                        }
+                        if (isExpanded) {
+                            Text(lab.description, style = MaterialTheme.typography.body2)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (selectedLab != null) {
+        EditLabWindow(lab = selectedLab!!, onClose = { selectedLab = null })
+    }
+}
+
+@OptIn(InternalAPI::class)
+@Composable
+fun EditLabWindow(lab: LabDTO, onClose: () -> Unit) {
+    var labName by remember { mutableStateOf(lab.labName) }
+    var labDescription by remember { mutableStateOf(lab.description) }
+    var labFile by remember { mutableStateOf<File?>(null) }
+
+    fun selectFile() {
+        val fileChooser = JFileChooser()
+        fileChooser.dialogTitle = "Выберите новый файл лабораторной работы"
+        fileChooser.fileFilter = FileNameExtensionFilter("PDF Files", "pdf")
+        val result = fileChooser.showOpenDialog(null)
+        if (result == JFileChooser.APPROVE_OPTION) {
+            labFile = fileChooser.selectedFile
+        }
+    }
+
+    fun downloadCurrentFile() {
+        runBlocking {
+            val response: HttpResponse = client.get("http://127.0.0.1:8082/lab/electronic/get") {
+                cookie("JWT", AuthInfo.token!!)
+                header("Content-Type", "application/json")
+                setBody(StudentElectronicLabRq(lab.labName, lab.labId))
+            }
+
+            if (response.status == HttpStatusCode.OK) {
+                val tempFile = File.createTempFile("lab_description", ".pdf")
+                Files.copy(response.rawContent.toInputStream(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
+                Desktop.getDesktop().open(tempFile)
+            } else {
+                println("Ошибка при скачивании файла: \\${response.status}")
+            }
+        }
+    }
+
+    Window(onCloseRequest = onClose, title = "Редактирование лабораторной работы - \\${lab.labName}") {
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Text("Редактирование лабораторной работы", style = MaterialTheme.typography.h4)
+            Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = labName,
+                onValueChange = { labName = it },
+                label = { Text("Название") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = labDescription,
+                onValueChange = { labDescription = it },
+                label = { Text("Описание") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(onClick = { selectFile() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Выбрать новый файл")
+            }
+            labFile?.let {
+                Text("Выбранный файл: \\${it.name}", style = MaterialTheme.typography.body2)
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { downloadCurrentFile() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Скачать и просмотреть текущий файл")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { /* Логика сохранения изменений */ }, modifier = Modifier.fillMaxWidth()) {
+                Text("Сохранить изменения")
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) {
+                Text("Закрыть")
             }
         }
     }
@@ -606,6 +709,16 @@ fun AddLabScreen(onBack: () -> Unit) {
     var labDescription by remember { mutableStateOf("") }
     var labFile by remember { mutableStateOf<File?>(null) }
     var storageLocation by remember { mutableStateOf("") }
+
+    fun selectFile() {
+        val fileChooser = JFileChooser()
+        fileChooser.dialogTitle = "Выберите файл лабораторной работы"
+        fileChooser.fileFilter = FileNameExtensionFilter("PDF Files", "pdf")
+        val result = fileChooser.showOpenDialog(null)
+        if (result == JFileChooser.APPROVE_OPTION) {
+            labFile = fileChooser.selectedFile
+        }
+    }
 
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Добавить лабораторную работу", style = MaterialTheme.typography.h4)
@@ -624,8 +737,11 @@ fun AddLabScreen(onBack: () -> Unit) {
             modifier = Modifier.fillMaxWidth()
         )
         Spacer(modifier = Modifier.height(8.dp))
-        Button(onClick = { /* Логика выбора файла */ }, modifier = Modifier.fillMaxWidth()) {
+        Button(onClick = { selectFile() }, modifier = Modifier.fillMaxWidth()) {
             Text("Выбрать файл")
+        }
+        labFile?.let {
+            Text("Выбранный файл: ${it.name}", style = MaterialTheme.typography.body2)
         }
         Spacer(modifier = Modifier.height(8.dp))
         OutlinedTextField(
@@ -684,7 +800,7 @@ fun App() {
         currentScreen == "getLabs" -> {
             AdminLabsScreen(onBack = { currentScreen = "main" })
         }
-        isStaff -> {
+        !isStaff -> {
             StaffMenuScreen(onAddLab = { currentScreen = "addLab" }, onGetLabs = { currentScreen = "getLabs" })
         }
         else -> {
