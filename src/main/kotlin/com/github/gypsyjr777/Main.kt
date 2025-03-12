@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
+import com.github.gypsyjr777.model.LabDTO
 import com.github.gypsyjr777.model.StudentElectronicLabRq
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -105,7 +106,7 @@ fun loadSkiaImage(resourcePath: String): Image? {
 // Запускаем временный сервер на порту 8080
 
 @Composable
-fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
+fun AuthenticationScreen(onLoginSuccess: (List<LabDTO>) -> Unit) {
     var token by remember { mutableStateOf<String?>(null) }
     var manualToken by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(true) }
@@ -198,7 +199,7 @@ fun AuthenticationScreen(onLoginSuccess: (List<String>) -> Unit) {
     }
 }
 
-fun getAllLabs(token: String): List<String> = runBlocking {
+fun getAllLabs(token: String): List<LabDTO> = runBlocking {
     val response: HttpResponse = client.get("http://127.0.0.1:8082/lab/electronic/get/all") {
         cookie("JWT", AuthInfo.token!!)
         header("Content-Type", "application/json")
@@ -209,7 +210,9 @@ fun getAllLabs(token: String): List<String> = runBlocking {
         HttpStatusCode.Unauthorized -> emptyList()
         HttpStatusCode.OK -> {
             val result: Map<String, Any> = response.call.body()
-            (result["labs"] as String).split(",")
+            val labs = ArrayList<LabDTO>()
+            (result["labs"] as ArrayList<Map<String, String>>).forEach { labs.add(LabDTO(it)) }
+            return@runBlocking labs
         }
 
         else -> throw RuntimeException("Непредвиденная ошибка")
@@ -243,7 +246,7 @@ suspend fun fetchLabsFromBackend(): List<String> {
 }
 
 @Composable
-fun LabsScreen(labs: List<String>, onLabSelected: (String) -> Unit) {
+fun LabsScreen(labs: List<LabDTO>, onLabSelected: (LabDTO) -> Unit) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Доступные лабораторные работы", style = MaterialTheme.typography.h4)
         Spacer(modifier = Modifier.height(16.dp))
@@ -259,7 +262,7 @@ fun LabsScreen(labs: List<String>, onLabSelected: (String) -> Unit) {
                     elevation = 4.dp
                 ) {
                     Row(modifier = Modifier.padding(16.dp)) {
-                        Text(lab)
+                        Text(lab.labName)
                     }
                 }
             }
@@ -268,21 +271,21 @@ fun LabsScreen(labs: List<String>, onLabSelected: (String) -> Unit) {
 }
 
 @Composable
-fun CircuitEditorWindow(labName: String, onClose: () -> Unit) {
+fun CircuitEditorWindow(lab: LabDTO, onClose: () -> Unit) {
     Window(
         onCloseRequest = onClose,
-        title = "Редактор схемы - $labName",
+        title = "Редактор схемы - ${lab.labName}",
         state = WindowState(width = 1000.dp, height = 600.dp)
     ) {
         MaterialTheme {
-            CircuitEditorScreen(labName)
+            CircuitEditorScreen(lab)
         }
     }
 }
 
 @OptIn(ExperimentalComposeUiApi::class)
 @Composable
-fun CircuitEditorScreen(labName: String) {
+fun CircuitEditorScreen(lab: LabDTO) {
     // Список доступных компонентов
     val availableComponents = listOf("Резистор", "Конденсатор", "Индуктор", "Источник питания")
     // Состояние элементов и проводов
@@ -292,6 +295,8 @@ fun CircuitEditorScreen(labName: String) {
     var selectedElementType by remember { mutableStateOf<String?>(null) }
     // Режим удаления
     var isDeleteMode by remember { mutableStateOf(false) }
+    // Состояние для отслеживания перетаскиваемого элемента
+    var draggedElement by remember { mutableStateOf<CircuitElement?>(null) }
 
     // Для временного проводка (режим соединения)
     var currentWireFrom by remember { mutableStateOf<CircuitElement?>(null) }
@@ -360,9 +365,9 @@ fun CircuitEditorScreen(labName: String) {
             wires.removeAll { it.from.id == elementHit.id || it.to.id == elementHit.id }
         }
     }
+
     Row(modifier = Modifier.fillMaxSize()) {
         // Левая часть – доска для создания схемы
-        // Единый обработчик жестов
         Box(
             modifier = Modifier
                 .weight(1f)
@@ -375,7 +380,6 @@ fun CircuitEditorScreen(labName: String) {
                             val offset = down.position
 
                             if (isDeleteMode) {
-                                // В режиме удаления по клику удаляем провод или элемент
                                 handleDeletion(offset)
                             } else {
                                 // Если клик в зоне соединения, начинаем соединение
@@ -383,7 +387,6 @@ fun CircuitEditorScreen(labName: String) {
                                 if (cpElement != null) {
                                     currentWireFrom = cpElement
                                     currentWireEnd = cpElement.connectionPoint()
-                                    // Обновляем конец проводка в цикле (без задержки)
                                     while (true) {
                                         val event = awaitPointerEvent()
                                         val delta = event.changes.first().positionChange()
@@ -401,17 +404,17 @@ fun CircuitEditorScreen(labName: String) {
                                     }
                                     currentWireFrom = null
                                     currentWireEnd = null
-                                }
-                                // Если клик внутри элемента (но не в зоне соединения) – перемещаем его
-                                else {
+                                } else {
+                                    // Ищем элемент для перемещения
                                     val moveElement = circuitElements.asReversed().find { element ->
                                         val halfW = element.width / 2
                                         val halfH = element.height / 2
                                         offset.x in (element.x - halfW)..(element.x + halfW) &&
                                                 offset.y in (element.y - halfH)..(element.y + halfH)
                                     }
+
                                     if (moveElement != null) {
-                                        // Мгновенное перемещение – обновляем позицию в цикле
+                                        draggedElement = moveElement
                                         while (true) {
                                             val event = awaitPointerEvent()
                                             val delta = event.changes.first().positionChange()
@@ -420,20 +423,17 @@ fun CircuitEditorScreen(labName: String) {
                                             event.changes.forEach { it.consumeAllChanges() }
                                             if (event.changes.all { !it.pressed }) break
                                         }
-                                    }
-                                    // Если клик по пустому месту – добавляем новый элемент (при выбранном типе)
-                                    else {
-                                        if (selectedElementType != null) {
-                                            val newId = circuitElements.size + 1
-                                            circuitElements.add(
-                                                CircuitElement(
-                                                    id = newId,
-                                                    type = selectedElementType!!,
-                                                    x = offset.x,
-                                                    y = offset.y
-                                                )
+                                        draggedElement = null
+                                    } else if (selectedElementType != null) {
+                                        val newId = circuitElements.size + 1
+                                        circuitElements.add(
+                                            CircuitElement(
+                                                id = newId,
+                                                type = selectedElementType!!,
+                                                x = offset.x,
+                                                y = offset.y
                                             )
-                                        }
+                                        )
                                     }
                                 }
                             }
@@ -442,7 +442,7 @@ fun CircuitEditorScreen(labName: String) {
                 }
         ) {
             Canvas(modifier = Modifier.fillMaxSize()) {
-                // Рисуем зафиксированные провода (на основе connectionPoint элементов)
+                // Рисуем зафиксированные провода
                 wires.forEach { wire ->
                     drawLine(
                         color = Color.Black,
@@ -451,7 +451,8 @@ fun CircuitEditorScreen(labName: String) {
                         strokeWidth = 3f
                     )
                 }
-                // Рисуем временный провод, если он создается
+
+                // Рисуем временный провод
                 if (currentWireFrom != null && currentWireEnd != null) {
                     drawLine(
                         color = Color.Gray,
@@ -460,6 +461,7 @@ fun CircuitEditorScreen(labName: String) {
                         strokeWidth = 2f
                     )
                 }
+
                 // Рисуем элементы
                 circuitElements.forEach { element ->
                     drawIntoCanvas { canvas ->
@@ -474,21 +476,15 @@ fun CircuitEditorScreen(labName: String) {
                             )
                             skCanvas.drawImageRect(image, dstRect)
                         }
-                        // Для отладки – точка подключения
+                        // Точка подключения
                         drawCircle(
-                            color = Color.Red,
+                            color = if (element == draggedElement) Color.Blue else Color.Red,
                             radius = 4f,
                             center = element.connectionPoint()
                         )
                     }
                 }
             }
-        }
-
-        // Вычисляем и отображаем информацию о соединениях
-        val connectionInfo = buildConnections(wires)
-        val connectionText = connectionInfo.connections.entries.joinToString(separator = "\n") { (id, list) ->
-            "Элемент $id соединён с: ${list.joinToString(", ")}"
         }
 
         // Боковая панель
@@ -518,7 +514,6 @@ fun CircuitEditorScreen(labName: String) {
             Spacer(modifier = Modifier.height(16.dp))
             Text("Выбранный элемент: ${selectedElementType ?: "нет"}")
             Spacer(modifier = Modifier.height(16.dp))
-            Spacer(modifier = Modifier.height(16.dp))
             Text(
                 "Подсказка:\n" +
                         " - Клик в узкой зоне нижнего края элемента начинает соединение.\n" +
@@ -533,8 +528,8 @@ fun CircuitEditorScreen(labName: String) {
 @Composable
 fun App() {
     var isLoggedIn by remember { mutableStateOf(false) }
-    var labsList by remember { mutableStateOf(emptyList<String>()) }
-    var selectedLab by remember { mutableStateOf<String?>(null) }
+    var labsList by remember { mutableStateOf(emptyList<LabDTO>()) }
+    var selectedLab by remember { mutableStateOf<LabDTO?>(null) }
 
     if (!isLoggedIn) {
         AuthenticationScreen(onLoginSuccess = { labs ->
@@ -547,7 +542,7 @@ fun App() {
         })
     }
     if (selectedLab != null) {
-        CircuitEditorWindow(labName = selectedLab!!, onClose = { selectedLab = null })
+        CircuitEditorWindow(lab = selectedLab!!, onClose = { selectedLab = null })
     }
 }
 
