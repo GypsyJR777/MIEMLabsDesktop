@@ -561,14 +561,99 @@ fun CircuitEditorScreen(lab: LabDTO) {
 }
 
 @Composable
-fun StaffMenuScreen() {
+fun AdminLabsScreen(onBack: () -> Unit) {
+    var labsList by remember { mutableStateOf(emptyList<LabDTO>()) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    LaunchedEffect(Unit) {
+        val response: HttpResponse = client.get("http://127.0.0.1:8082/admin/labs") {
+            cookie("JWT", AuthInfo.token!!)
+            header("Content-Type", "application/json")
+        }
+
+        if (response.status == HttpStatusCode.OK) {
+            val result: Map<String, Any> = response.call.body()
+            labsList = (result["labs"] as ArrayList<Map<String, String>>).map { LabDTO(it) }
+        } else {
+            println("Ошибка при загрузке лабораторных работ: ${response.status}")
+        }
+        isLoading = false
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Все лабораторные работы", style = MaterialTheme.typography.h4)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text("Назад")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        if (isLoading) {
+            CircularProgressIndicator()
+        } else if (labsList.isEmpty()) {
+            Text("Нет доступных лабораторных работ")
+        } else {
+            labsList.forEach { lab ->
+                Text(lab.labName, style = MaterialTheme.typography.body1)
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun AddLabScreen(onBack: () -> Unit) {
+    var labName by remember { mutableStateOf("") }
+    var labDescription by remember { mutableStateOf("") }
+    var labFile by remember { mutableStateOf<File?>(null) }
+    var storageLocation by remember { mutableStateOf("") }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Добавить лабораторную работу", style = MaterialTheme.typography.h4)
+        Spacer(modifier = Modifier.height(16.dp))
+        OutlinedTextField(
+            value = labName,
+            onValueChange = { labName = it },
+            label = { Text("Название") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = labDescription,
+            onValueChange = { labDescription = it },
+            label = { Text("Краткое описание") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+        Button(onClick = { /* Логика выбора файла */ }, modifier = Modifier.fillMaxWidth()) {
+            Text("Выбрать файл")
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        OutlinedTextField(
+            value = storageLocation,
+            onValueChange = { storageLocation = it },
+            label = { Text("Место хранения на сервере (необязательно)") },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = { /* Логика отправки данных на сервер */ }, modifier = Modifier.fillMaxWidth()) {
+            Text("Сохранить")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth()) {
+            Text("Назад")
+        }
+    }
+}
+
+@Composable
+fun StaffMenuScreen(onAddLab: () -> Unit, onGetLabs: () -> Unit) {
     Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
         Text("Меню сотрудника", style = MaterialTheme.typography.h4)
         Spacer(modifier = Modifier.height(16.dp))
-        Button(onClick = { /* Логика добавления лабораторной работы */ }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Button(onClick = onAddLab, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Text("Добавить лабораторную работу")
         }
-        Button(onClick = { /* Логика изменения данных о лабораторной работе */ }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Button(onClick = onGetLabs, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Text("Изменить данные о лабораторной работе")
         }
         Button(onClick = { /* Логика просмотра списка результатов студентов */ }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
@@ -583,20 +668,32 @@ fun App() {
     var isStaff by remember { mutableStateOf(false) }
     var labsList by remember { mutableStateOf(emptyList<LabDTO>()) }
     var selectedLab by remember { mutableStateOf<LabDTO?>(null) }
+    var currentScreen by remember { mutableStateOf("main") }
 
-    if (!isLoggedIn) {
-        AuthenticationScreen(onLoginSuccess = { labs, staff ->
-            labsList = labs
-            isStaff = staff
-            isLoggedIn = true
-        })
-    } else if (isStaff) {
-        StaffMenuScreen()
-    } else {
-        LabsScreen(labs = labsList, onLabSelected = { lab ->
-            selectedLab = lab
-        })
+    when {
+        !isLoggedIn -> {
+            AuthenticationScreen(onLoginSuccess = { labs, staff ->
+                labsList = labs
+                isStaff = staff
+                isLoggedIn = true
+            })
+        }
+        currentScreen == "addLab" -> {
+            AddLabScreen(onBack = { currentScreen = "main" })
+        }
+        currentScreen == "getLabs" -> {
+            AdminLabsScreen(onBack = { currentScreen = "main" })
+        }
+        isStaff -> {
+            StaffMenuScreen(onAddLab = { currentScreen = "addLab" }, onGetLabs = { currentScreen = "getLabs" })
+        }
+        else -> {
+            LabsScreen(labs = labsList, onLabSelected = { lab ->
+                selectedLab = lab
+            })
+        }
     }
+
     if (selectedLab != null) {
         CircuitEditorWindow(lab = selectedLab!!, onClose = { selectedLab = null })
     }
