@@ -7,6 +7,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.material.icons.Icons
@@ -762,7 +764,7 @@ fun AddLabScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun StaffMenuScreen(onAddLab: () -> Unit, onGetLabs: () -> Unit) {
+fun StaffMenuScreen(onAddLab: () -> Unit, onGetLabs: () -> Unit, onViewStudentStats: () -> Unit) {
     var showEquipmentList by remember { mutableStateOf(false) }
     var showAddEquipment by remember { mutableStateOf(false) }
 
@@ -781,7 +783,7 @@ fun StaffMenuScreen(onAddLab: () -> Unit, onGetLabs: () -> Unit) {
         Button(onClick = { showAddEquipment = true }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Text("Добавить новое оборудование")
         }
-        Button(onClick = { /* Логика просмотра списка результатов студентов */ }, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+        Button(onClick = onViewStudentStats, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
             Text("Посмотреть список результатов студентов")
         }
     }
@@ -910,6 +912,59 @@ fun AddEquipmentWindow(onClose: () -> Unit) {
 }
 
 @Composable
+fun StudentStatsScreen(onBack: () -> Unit) {
+    var studentStats by remember { mutableStateOf(emptyList<String>()) }
+    var isLoading by remember { mutableStateOf(true) }
+    var currentPage by remember { mutableStateOf(0) }
+    val pageSize = 10
+
+    LaunchedEffect(currentPage) {
+        val response: HttpResponse = client.get("http://127.0.0.1:8082/admin/stats") {
+            cookie("JWT", AuthInfo.token!!)
+            header("Content-Type", "application/json")
+            parameter("size", pageSize)
+            parameter("page", currentPage)
+        }
+
+        if (response.status == HttpStatusCode.OK) {
+            val result: Map<String, Any> = response.call.body()
+            studentStats = result["stats"] as List<String>
+        } else {
+            println("Ошибка при загрузке статистики студентов: ${response.status}")
+        }
+        isLoading = false
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+        Text("Статистика студентов", style = MaterialTheme.typography.h4)
+        Spacer(modifier = Modifier.height(16.dp))
+        Button(onClick = onBack, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
+            Text("Назад")
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+        if (isLoading) {
+            CircularProgressIndicator()
+        } else if (studentStats.isEmpty()) {
+            Text("Нет данных для отображения")
+        } else {
+            LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(studentStats) { stat ->
+                    Text(stat, modifier = Modifier.padding(vertical = 4.dp))
+                }
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Button(onClick = { if (currentPage > 0) currentPage-- }, enabled = currentPage > 0) {
+                    Text("Предыдущая")
+                }
+                Button(onClick = { currentPage++ }) {
+                    Text("Следующая")
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun App() {
     var isLoggedIn by remember { mutableStateOf(false) }
     var isStaff by remember { mutableStateOf(false) }
@@ -932,7 +987,10 @@ fun App() {
             AdminLabsScreen(onBack = { currentScreen = "main" })
         }
         !isStaff -> {
-            StaffMenuScreen(onAddLab = { currentScreen = "addLab" }, onGetLabs = { currentScreen = "getLabs" })
+            StaffMenuScreen(onAddLab = { currentScreen = "addLab" }, onGetLabs = { currentScreen = "getLabs" }, onViewStudentStats = { currentScreen = "studentStats" })
+        }
+        currentScreen == "studentStats" -> {
+            StudentStatsScreen(onBack = { currentScreen = "main" })
         }
         else -> {
             LabsScreen(labs = labsList, onLabSelected = { lab ->
