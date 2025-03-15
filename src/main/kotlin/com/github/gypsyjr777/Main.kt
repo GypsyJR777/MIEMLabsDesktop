@@ -1,17 +1,6 @@
 package com.github.gypsyjr777
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material.*
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.dp
+import androidx.compose.material.MaterialTheme
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
 import com.github.gypsyjr777.model.LabDTO
@@ -24,20 +13,7 @@ import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
-import io.ktor.utils.io.*
-import io.ktor.utils.io.jvm.javaio.*
 import kotlinx.coroutines.runBlocking
-import java.awt.Desktop
-import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import javax.swing.JFileChooser
-import javax.swing.filechooser.FileNameExtensionFilter
-import com.github.gypsyjr777.EditLabWindow
-import com.github.gypsyjr777.StudentStatsScreen
-import com.github.gypsyjr777.StaffMenuScreen
-import com.github.gypsyjr777.EquipmentListWindow
-import com.github.gypsyjr777.AddEquipmentWindow
 
 val client = HttpClient(CIO) {
     install(ContentNegotiation) {
@@ -70,44 +46,6 @@ fun getAllLabs(): List<LabDTO> = runBlocking {
         }
 
         else -> throw RuntimeException("Непредвиденная ошибка")
-    }
-}
-
-@Composable
-fun App() {
-    var isLoggedIn by remember { mutableStateOf(false) }
-    var isStaff by remember { mutableStateOf(false) }
-    var selectedLab by remember { mutableStateOf<LabDTO?>(null) }
-    var currentScreen by remember { mutableStateOf("main") }
-
-    when {
-        !isLoggedIn -> {
-            AuthenticationScreen(onLoginSuccess = { staff ->
-                isStaff = staff
-                isLoggedIn = true
-            })
-        }
-        currentScreen == "addLab" -> {
-            AddLabScreen(onBack = { currentScreen = "main" })
-        }
-        currentScreen == "getLabs" -> {
-            AdminLabsScreen(onBack = { currentScreen = "main" })
-        }
-        isStaff -> {
-            StaffMenuScreen(onAddLab = { currentScreen = "addLab" }, onGetLabs = { currentScreen = "getLabs" }, onViewStudentStats = { currentScreen = "studentStats" })
-        }
-        currentScreen == "studentStats" -> {
-            StudentStatsScreen(onBack = { currentScreen = "main" })
-        }
-        else -> {
-            LabsScreen(labs = getAllLabs(), onLabSelected = { lab ->
-                selectedLab = lab
-            })
-        }
-    }
-
-    if (selectedLab != null) {
-        CircuitEditorWindow(lab = selectedLab!!, onClose = { selectedLab = null })
     }
 }
 
