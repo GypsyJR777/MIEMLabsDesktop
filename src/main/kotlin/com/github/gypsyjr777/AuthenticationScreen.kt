@@ -58,7 +58,6 @@ fun AuthenticationScreen(onLoginSuccess: (Boolean) -> Unit) {
         }
     }
 
-    Desktop.getDesktop().browse(URI("${ServerConfig.serverAddress}/oauth/login/hse"))
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally

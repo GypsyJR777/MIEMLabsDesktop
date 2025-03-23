@@ -5,10 +5,12 @@ import com.github.gypsyjr777.AuthInfo
 import com.github.gypsyjr777.ServerConfig
 import com.github.gypsyjr777.client
 import com.github.gypsyjr777.model.CreateLabRequest
+import io.ktor.client.plugins.*
 import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
+import io.ktor.http.content.*
 import java.io.File
 import java.io.IOException
 
@@ -27,7 +29,7 @@ class LabService {
 
     /**
      * Создает новую лабораторную работу, отправляя данные через multipart/form-data
-     * 
+     *
      * @param labName Название лабораторной работы
      * @param description Описание лабораторной работы
      * @param groupNum Номер группы
@@ -48,36 +50,36 @@ class LabService {
                 labName = labName,
                 description = description,
                 groupNum = groupNum,
-                labType = labType
+                labType = labType,
+                file = file.readBytes()
             )
-            
+
             // Сериализуем объект в JSON-строку
             val objectMapper = ObjectMapper()
             val requestJson = objectMapper.writeValueAsString(labRequest)
-            
-            // Отправляем запрос с multipart/form-data
-            val response: HttpResponse = client.submitFormWithBinaryData(
-                url = "${ServerConfig.serverAddress}/admin/newlab",
-                formData = formData {
-                    // Очень важно! Передаем JSON строку как первый параметр с именем "request"
-                    // Так сервер сможет правильно десериализовать объект CreateLabRequest
-                    append("request", requestJson, Headers.build {
-                        append(HttpHeaders.ContentType, ContentType.Application.Json.toString())
-                    })
-                    
-                    // Добавляем файл в бинарном виде
-                    append("fileUpload", file.readBytes(), Headers.build {
-                        append(HttpHeaders.ContentDisposition, "form-data; name=\"file\"; filename=\"${file.name}\"")
-                        append(HttpHeaders.ContentType, ContentType.Application.Pdf.toString())
-                    })
-                },
-            ) {
+
+
+            val response: HttpResponse = client.submitFormWithBinaryData( url = "${ServerConfig.serverAddress}/admin/newlab",
+                    formData {
+                        append("labName", labName)
+                        append("description", description)
+                        append("groupNum", groupNum)
+                        append("labType", labType)
+                        append("file", file.readBytes(), Headers.build {
+                            append(HttpHeaders.ContentType, ContentType.Application.Pdf.toString())
+                            append(HttpHeaders.ContentDisposition, "filename=${file.name}")
+                        })
+                    }
+                ) {
                 cookie("JWT", AuthInfo.token!!)
+                onUpload { bytesSentTotal, contentLength ->
+                    println("Sent $bytesSentTotal bytes from $contentLength")
+                }
             }
-            
+
             val responseText = response.bodyAsText()
             println("Ответ сервера: $responseText")
-            
+
             if (response.status == HttpStatusCode.OK || response.status == HttpStatusCode.Created) {
                 ApiResult.Success(responseText)
             } else {

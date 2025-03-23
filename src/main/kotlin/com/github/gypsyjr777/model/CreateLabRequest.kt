@@ -7,5 +7,6 @@ data class CreateLabRequest(
     val labName: String,
     val description: String,
     val groupNum: String,
-    val labType: String
+    val labType: String,
+    val file: ByteArray
 )
