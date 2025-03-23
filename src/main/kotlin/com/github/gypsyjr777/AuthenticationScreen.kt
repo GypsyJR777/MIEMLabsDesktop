@@ -58,7 +58,7 @@ fun AuthenticationScreen(onLoginSuccess: (Boolean) -> Unit) {
         }
     }
 
-    Desktop.getDesktop().browse(URI("http://127.0.0.1:8082/oauth/login/hse"))
+    Desktop.getDesktop().browse(URI("${ServerConfig.serverAddress}/oauth/login/hse"))
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally
@@ -67,7 +67,7 @@ fun AuthenticationScreen(onLoginSuccess: (Boolean) -> Unit) {
         Spacer(modifier = Modifier.height(16.dp))
         Button(onClick = {
             // Открываем браузер для аутентификации
-            Desktop.getDesktop().browse(URI("http://127.0.0.1:8082/oauth/login/hse"))
+            Desktop.getDesktop().browse(URI("${ServerConfig.serverAddress}/oauth/login/hse"))
         }) {
             Text("Открыть браузер для аутентификации")
         }
@@ -118,7 +118,7 @@ fun AuthenticationScreen(onLoginSuccess: (Boolean) -> Unit) {
 }
 
 fun onTokenReceived(token: String): Boolean = runBlocking {
-    val response: HttpResponse = client.post("http://127.0.0.1:8082/") {
+    val response: HttpResponse = client.post("${ServerConfig.serverAddress}/") {
         cookie("JWT", token)
         renderCookieHeader(Cookie("JWT", token))
     }.call.response

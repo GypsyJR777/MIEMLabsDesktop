@@ -42,7 +42,7 @@ import java.nio.file.StandardCopyOption
 fun CircuitEditorWindow(lab: LabDTO, onClose: () -> Unit) {
     // Скачиваем файл с описанием лабораторной работы
     LaunchedEffect(lab) {
-        val response: HttpResponse = client.get("http://127.0.0.1:8082/lab/electronic/get") {
+        val response: HttpResponse = client.get("${ServerConfig.serverAddress}/lab/electronic/get") {
             cookie("JWT", AuthInfo.token!!)
             header("Content-Type", "application/json")
             setBody(StudentElectronicLabRq(lab.labName, lab.labId))

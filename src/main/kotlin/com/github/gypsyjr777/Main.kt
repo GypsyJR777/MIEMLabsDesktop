@@ -15,9 +15,21 @@ import io.ktor.http.*
 import io.ktor.serialization.jackson.*
 import kotlinx.coroutines.runBlocking
 
-val client = HttpClient(CIO) {
-    install(ContentNegotiation) {
-        jackson()
+// Объект для хранения настроек сервера
+object ServerConfig {
+    // По умолчанию локальный адрес
+    var serverAddress: String = "http://127.0.0.1:8082"
+}
+
+// Клиент создается один раз и используется во всем приложении
+lateinit var client: HttpClient
+
+// Функция для инициализации HTTP-клиента
+fun initializeHttpClient() {
+    client = HttpClient(CIO) {
+        install(ContentNegotiation) {
+            jackson()
+        }
     }
 }
 
@@ -30,7 +42,7 @@ object AuthInfo {
 }
 
 fun getAllLabs(): List<LabDTO> = runBlocking {
-    val response: HttpResponse = client.get("http://127.0.0.1:8082/lab/electronic/get/all") {
+    val response: HttpResponse = client.get("${ServerConfig.serverAddress}/lab/electronic/get/all") {
         cookie("JWT", AuthInfo.token!!)
         header("Content-Type", "application/json")
         setBody(StudentElectronicLabRq())
@@ -50,7 +62,11 @@ fun getAllLabs(): List<LabDTO> = runBlocking {
 }
 
 fun main() = application {
-    Window(onCloseRequest = ::exitApplication, title = "Kotlin Multiplatform Desktop App") {
+    // Инициализируем HTTP-клиент со значениями по умолчанию
+    // В дальнейшем он будет переинициализирован с введенным пользователем адресом
+    initializeHttpClient()
+    
+    Window(onCloseRequest = ::exitApplication, title = "Лабораторный практикум МИЭМ") {
         MaterialTheme {
             App()
         }

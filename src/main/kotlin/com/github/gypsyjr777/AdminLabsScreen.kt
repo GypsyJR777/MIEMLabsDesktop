@@ -23,7 +23,7 @@ fun AdminLabsScreen(onBack: () -> Unit) {
     var selectedLab by remember { mutableStateOf<LabDTO?>(null) }
 
     LaunchedEffect(Unit) {
-        val response: HttpResponse = client.get("http://127.0.0.1:8082/admin/labs") {
+        val response: HttpResponse = client.get("${ServerConfig.serverAddress}/admin/labs") {
             cookie("JWT", AuthInfo.token!!)
             header("Content-Type", "application/json")
         }

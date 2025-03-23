@@ -42,7 +42,7 @@ fun EditLabWindow(lab: LabDTO, onClose: () -> Unit) {
 
     fun downloadCurrentFile() {
         runBlocking {
-            val response: HttpResponse = client.get("http://127.0.0.1:8082/lab/electronic/get") {
+            val response: HttpResponse = client.get("${ServerConfig.serverAddress}/lab/electronic/get") {
                 cookie("JWT", AuthInfo.token!!)
                 header("Content-Type", "application/json")
                 setBody(StudentElectronicLabRq(lab.labName, lab.labId))

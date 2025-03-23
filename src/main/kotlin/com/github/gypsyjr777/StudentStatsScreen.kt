@@ -20,7 +20,7 @@ fun StudentStatsScreen(onBack: () -> Unit) {
     val pageSize = 10
 
     LaunchedEffect(currentPage) {
-        val response: HttpResponse = client.get("http://127.0.0.1:8082/admin/stats") {
+        val response: HttpResponse = client.get("${ServerConfig.serverAddress}/admin/stats") {
             cookie("JWT", AuthInfo.token!!)
             header("Content-Type", "application/json")
             parameter("size", pageSize)

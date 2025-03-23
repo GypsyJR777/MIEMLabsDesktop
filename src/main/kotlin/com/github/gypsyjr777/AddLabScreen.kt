@@ -6,18 +6,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.github.gypsyjr777.model.CreateLabRequest
+import com.github.gypsyjr777.service.LabService
 import javax.swing.JFileChooser
 import javax.swing.filechooser.FileNameExtensionFilter
 import java.io.File
-import io.ktor.client.request.*
-import io.ktor.client.request.forms.*
-import io.ktor.client.statement.*
-import io.ktor.http.*
-import io.netty.handler.codec.http.multipart.DiskFileUpload
-import io.netty.handler.codec.http.multipart.MemoryFileUpload
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 
 @Composable
 fun AddLabScreen(onBack: () -> Unit) {
@@ -30,6 +23,7 @@ fun AddLabScreen(onBack: () -> Unit) {
     var successMessage by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf("") }
     val coroutineScope = rememberCoroutineScope()
+    val labService = remember { LabService() }
 
     fun selectFile() {
         val fileChooser = JFileChooser()
@@ -64,55 +58,32 @@ fun AddLabScreen(onBack: () -> Unit) {
         isLoading = true
 
         coroutineScope.launch {
-            try {
-                val request = CreateLabRequest(
-                    labName = labName,
-                    description = labDescription,
-                    groupNum = groupNum,
-                    labType = labType,
-                    file = null/*MemoryFileUpload(labFile!!.name, labFile!!.absolutePath, "application/", )*/
-                )
-
-                val fileBytes = labFile!!.readBytes()
-                val fileName = labFile!!.name
-                
-                val multipartContent = MultiPartFormDataContent(
-                    formData {
-                        append("labName", labName)
-                        append("description", labDescription)
-                        append("groupNum", groupNum)
-                        append("labType", labType)
-                        
-                        append("file", fileBytes, Headers.build {
-                            append(HttpHeaders.ContentDisposition, "form-data; name=\"file\"; filename=\"$fileName\"")
-                            append(HttpHeaders.ContentType, "application/pdf")
-                        })
-                    }
-                )
-                
-                val response: HttpResponse = client.post("http://127.0.0.1:8082/admin/newlab") {
-                    cookie("JWT", AuthInfo.token!!)
-                    setBody(multipartContent)
-                }
-                
-                val responseText = response.bodyAsText()
-                println("Ответ сервера: $responseText")
-
-                if (response.status == HttpStatusCode.OK || response.status == HttpStatusCode.Created) {
+            val result = labService.createLab(
+                labName = labName,
+                description = labDescription,
+                groupNum = groupNum,
+                labType = labType,
+                file = labFile!!
+            )
+            
+            when (result) {
+                is LabService.ApiResult.Success -> {
                     successMessage = "Лабораторная работа успешно создана"
                     labName = ""
                     labDescription = ""
                     groupNum = ""
                     labFile = null
-                } else {
-                    errorMessage = "Ошибка при создании лабораторной работы: ${response.status}\nОтвет: $responseText"
                 }
-            } catch (e: Exception) {
-                errorMessage = "Ошибка: ${e.message}"
-                e.printStackTrace()
-            } finally {
-                isLoading = false
+                is LabService.ApiResult.Error -> {
+                    errorMessage = "Ошибка при создании лабораторной работы: ${result.code}\n${result.message}"
+                }
+                is LabService.ApiResult.Exception -> {
+                    errorMessage = "Ошибка: ${result.throwable.message}"
+                    result.throwable.printStackTrace()
+                }
             }
+            
+            isLoading = false
         }
     }
 
@@ -171,4 +142,4 @@ fun AddLabScreen(onBack: () -> Unit) {
             Text("Назад")
         }
     }
-} 
+}

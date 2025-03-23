@@ -5,12 +5,20 @@ import com.github.gypsyjr777.model.LabDTO
 
 @Composable
 fun App() {
+    var isServerConfigured by remember { mutableStateOf(false) }
     var isLoggedIn by remember { mutableStateOf(false) }
     var isStaff by remember { mutableStateOf(false) }
     var selectedLab by remember { mutableStateOf<LabDTO?>(null) }
     var currentScreen by remember { mutableStateOf("main") }
 
     when {
+        // Сначала показываем экран настройки сервера
+        !isServerConfigured -> {
+            ServerConfigScreen(onConfigComplete = {
+                isServerConfigured = true
+            })
+        }
+        // Затем экран аутентификации
         !isLoggedIn -> {
             AuthenticationScreen(onLoginSuccess = { staff ->
                 isStaff = staff
