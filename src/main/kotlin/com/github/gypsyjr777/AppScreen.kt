@@ -31,7 +31,7 @@ fun App() {
         currentScreen == "getLabs" -> {
             AdminLabsScreen(onBack = { currentScreen = "main" })
         }
-        !isStaff -> {
+        isStaff -> {
             StaffMenuScreen(onAddLab = { currentScreen = "addLab" }, onGetLabs = { currentScreen = "getLabs" }, onViewStudentStats = { currentScreen = "studentStats" })
         }
         currentScreen == "studentStats" -> {
