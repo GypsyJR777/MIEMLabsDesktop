@@ -68,7 +68,7 @@ class CircuitService {
             )
             
             // Отправляем запрос на сервер
-            val response: HttpResponse = client.post("${ServerConfig.serverAddress}/lab/electronic/check") {
+            val response: HttpResponse = client.post("${ServerConfig.serverAddress}/lab/electronic/verify") {
                 cookie("JWT", AuthInfo.token!!)
                 header("Content-Type", "application/json")
                 setBody(request)

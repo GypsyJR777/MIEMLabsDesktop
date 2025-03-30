@@ -29,6 +29,7 @@ import io.ktor.http.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.jvm.javaio.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import java.awt.Desktop
@@ -145,13 +146,13 @@ fun CircuitEditorScreen(lab: LabDTO) {
                 listOf(
                     ConnectionPointInfo(
                         type = ConnectionPointType.POSITIVE,
-                        relativeX = 0.0f,
-                        relativeY = -1.0f
+                        relativeX = 1.0f,
+                        relativeY = 0.0f
                     ),
                     ConnectionPointInfo(
                         type = ConnectionPointType.NEGATIVE,
-                        relativeX = 0.0f,
-                        relativeY = 1.0f
+                        relativeX = -1.0f,
+                        relativeY = 0.0f
                     )
                 )
             }
@@ -655,7 +656,7 @@ fun CircuitEditorScreen(lab: LabDTO) {
                     // Запускаем проверку схемы
                     if (!isVerifying) {
                         verificationStatus = null
-                        kotlinx.coroutines.MainScope().launch {
+                        runBlocking {
                             verifyCircuit()
                         }
                     }
