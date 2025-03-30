@@ -1,6 +1,9 @@
 package com.github.gypsyjr777.model
 
-class LabDTO(lab: Map<String, String>) {
+/**
+ * Класс для передачи данных о лабораторной работе
+ */
+data class LabDTO(val lab: Map<String, String>) {
     val labId: String = lab["labId"]!!
     val labName: String = lab["labName"]!!
     val description: String = lab["description"]!!

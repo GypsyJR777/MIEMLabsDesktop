@@ -1,30 +1,28 @@
 package com.github.gypsyjr777
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.*
-import androidx.compose.material.Button
-import androidx.compose.material.MaterialTheme
-import androidx.compose.material.Text
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.consumeAllChanges
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Window
-import androidx.compose.ui.window.WindowPlacement
-import androidx.compose.ui.window.WindowState
-import com.github.gypsyjr777.model.LabDTO
-import com.github.gypsyjr777.model.StudentElectronicLabRq
+import androidx.compose.ui.window.*
+import com.github.gypsyjr777.model.*
+import com.github.gypsyjr777.service.CircuitService
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -79,7 +77,8 @@ fun CircuitEditorScreen(lab: LabDTO) {
         "Катушка", 
         "Источник напряжения", 
         "Источник тока", 
-        "Транзистор"
+        "Транзистор PNP",
+        "Транзистор NPN"
     )
     
     // Состояние элементов и проводов
@@ -101,119 +100,291 @@ fun CircuitEditorScreen(lab: LabDTO) {
     var currentWireFrom by remember { mutableStateOf<ConnectionPoint?>(null) }
     var currentWireEnd by remember { mutableStateOf<Offset?>(null) }
 
-    // Загрузка изображений (убедитесь, что пути верны)
+    // Загрузка изображений из ресурсов
     val resistorImage = loadSkiaImage("res/resistor.png")
     val capacitorImage = loadSkiaImage("res/capacitor.png")
     val inductorImage = loadSkiaImage("res/inductor.png")
     val voltageSourceImage = loadSkiaImage("res/power_source.png")
     val currentSourceImage = loadSkiaImage("res/power.png")
-    val transistorImage = loadSkiaImage("res/transistor.png") // TODO: создать изображение
+    val transistorPNPImage = loadSkiaImage("res/pnp-transistor.png")
+    val transistorNPNImage = loadSkiaImage("res/npn-transistor.png")
 
     fun getImageForType(type: String): Image? = when (type) {
-        "Резистор" -> resistorImage
-        "Конденсатор" -> capacitorImage
-        "Катушка" -> inductorImage
-        "Источник напряжения" -> voltageSourceImage
-        "Источник тока" -> currentSourceImage
-        "Транзистор" -> transistorImage
+        CircuitElementType.RESISTOR.displayName -> resistorImage
+        CircuitElementType.CAPACITOR.displayName -> capacitorImage
+        CircuitElementType.INDUCTOR.displayName -> inductorImage
+        CircuitElementType.VOLTAGE_SOURCE.displayName -> voltageSourceImage
+        CircuitElementType.CURRENT_SOURCE.displayName -> currentSourceImage
+        CircuitElementType.TRANSISTOR_PNP.displayName -> transistorPNPImage
+        CircuitElementType.TRANSISTOR_NPN.displayName -> transistorNPNImage
         else -> null
     }
     
-    // Функция для получения информации о количестве и расположении точек подключения
+    // Получает информацию о точках соединения для определенного типа элемента
     fun getConnectionPointsInfoForType(type: String): List<ConnectionPointInfo> {
         return when (type) {
-            "Резистор", "Конденсатор", "Катушка" -> listOf(
-                ConnectionPointInfo(relativeX = -0.5f, relativeY = 0f, type = "input"),
-                ConnectionPointInfo(relativeX = 0.5f, relativeY = 0f, type = "output")
-            )
-            "Источник напряжения", "Источник тока" -> listOf(
-                ConnectionPointInfo(relativeX = -0.5f, relativeY = 0f, type = "positive"),
-                ConnectionPointInfo(relativeX = 0.5f, relativeY = 0f, type = "negative")
-            )
-            "Транзистор" -> listOf(
-                ConnectionPointInfo(relativeX = 0f, relativeY = -0.5f, type = "collector"),
-                ConnectionPointInfo(relativeX = -0.5f, relativeY = 0f, type = "base"),
-                ConnectionPointInfo(relativeX = 0f, relativeY = 0.5f, type = "emitter")
-            )
-            else -> listOf(
-                ConnectionPointInfo(relativeX = -0.5f, relativeY = 0f, type = "default"),
-                ConnectionPointInfo(relativeX = 0.5f, relativeY = 0f, type = "default")
-            )
+            CircuitElementType.RESISTOR.displayName, 
+            CircuitElementType.CAPACITOR.displayName, 
+            CircuitElementType.INDUCTOR.displayName -> {
+                // Для элементов с двумя выводами (резистор, конденсатор, катушка)
+                listOf(
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.INPUT,
+                        relativeX = -1.0f,
+                        relativeY = 0.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.OUTPUT,
+                        relativeX = 1.0f,
+                        relativeY = 0.0f
+                    )
+                )
+            }
+            CircuitElementType.VOLTAGE_SOURCE.displayName -> {
+                // Для источника напряжения (положительный и отрицательный выводы)
+                listOf(
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.POSITIVE,
+                        relativeX = 0.0f,
+                        relativeY = -1.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.NEGATIVE,
+                        relativeX = 0.0f,
+                        relativeY = 1.0f
+                    )
+                )
+            }
+            CircuitElementType.CURRENT_SOURCE.displayName -> {
+                // Для источника тока (вход и выход)
+                listOf(
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.INPUT,
+                        relativeX = -1.0f,
+                        relativeY = 0.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.OUTPUT,
+                        relativeX = 1.0f,
+                        relativeY = 0.0f
+                    )
+                )
+            }
+            CircuitElementType.TRANSISTOR_PNP.displayName -> {
+                // Для PNP транзистора
+                listOf(
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.COLLECTOR,
+                        relativeX = 0.0f,
+                        relativeY = -1.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.BASE,
+                        relativeX = -1.0f,
+                        relativeY = 0.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.EMITTER,
+                        relativeX = 0.0f,
+                        relativeY = 1.0f
+                    )
+                )
+            }
+            CircuitElementType.TRANSISTOR_NPN.displayName -> {
+                // Для NPN транзистора
+                listOf(
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.COLLECTOR,
+                        relativeX = 0.0f,
+                        relativeY = -1.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.BASE,
+                        relativeX = -1.0f,
+                        relativeY = 0.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.EMITTER,
+                        relativeX = 0.0f,
+                        relativeY = 1.0f
+                    )
+                )
+            }
+            else -> emptyList()
         }
     }
 
-    // Функция проверки возможности соединения двух точек
-    fun canConnect(point1: ConnectionPoint, point2: ConnectionPoint): Boolean {
-        // Простая проверка: нельзя соединять точки одного элемента
-        if (point1.element.id == point2.element.id) {
+    // Функция для проверки возможности соединения двух точек
+    fun canConnect(from: ConnectionPoint, to: ConnectionPoint): Boolean {
+        // Нельзя соединять точки одного элемента
+        if (from.element.id == to.element.id) {
             return false
         }
         
-        // Добавить более сложные проверки соответствия типов соединения
+        // Нельзя соединять точки, уже соединенные проводом
+        if (wires.any { (it.from == from && it.to == to) || (it.from == to && it.to == from) }) {
+            return false
+        }
+        
         return true
     }
 
-    // Функция поиска точки соединения
-    fun findConnectionPoint(point: Offset, threshold: Float = 10f): ConnectionPoint? {
+    // Вспомогательная функция для расчета расстояния между точками
+    fun calculateDistance(p1: Offset, p2: Offset): Float {
+        val dx = p1.x - p2.x
+        val dy = p1.y - p2.y
+        return kotlin.math.sqrt(dx * dx + dy * dy)
+    }
+
+    // Функция для поиска точки соединения по координатам
+    fun findConnectionPoint(position: Offset): ConnectionPoint? {
+        // Поиск по всем элементам
         for (element in circuitElements) {
-            for (connectionPoint in element.connectionPoints) {
-                val cp = connectionPoint.position
-                val distance = (point - cp).getDistance()
-                if (distance <= threshold) {
-                    return connectionPoint
+            // Проверяем все точки соединения элемента
+            for (point in element.connectionPoints) {
+                // Если расстояние меньше порогового, считаем что кликнули по точке
+                val distance = calculateDistance(position, point.position)
+                if (distance < 10f) {
+                    return point
                 }
             }
         }
         return null
     }
 
-    // Функция расчета расстояния от точки до отрезка (для поиска проводов при удалении)
+    // Функция расчета расстояния от точки до отрезка
     fun distancePointToLineSegment(p: Offset, a: Offset, b: Offset): Float {
-        val A = p - a
-        val AB = b - a
-        val ab2 = AB.x * AB.x + AB.y * AB.y
-        val t = if (ab2 == 0f) 0f else (A.x * AB.x + A.y * AB.y) / ab2
-        val tClamped = t.coerceIn(0f, 1f)
-        val projection = a + Offset(AB.x * tClamped, AB.y * tClamped)
-        return (p - projection).getDistance()
+        val dx = b.x - a.x
+        val dy = b.y - a.y
+        
+        // Если отрезок вырождается в точку, возвращаем расстояние до этой точки
+        if (dx == 0f && dy == 0f) {
+            return calculateDistance(p, a)
+        }
+        
+        // Рассчитываем проекцию точки на отрезок
+        val t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / (dx * dx + dy * dy)
+        
+        // Если проекция за пределами отрезка, возвращаем расстояние до ближайшего конца
+        if (t < 0f) return calculateDistance(p, a)
+        if (t > 1f) return calculateDistance(p, b)
+        
+        // Рассчитываем ближайшую точку на отрезке и возвращаем расстояние до неё
+        val projectionX = a.x + t * dx
+        val projectionY = a.y + t * dy
+        return calculateDistance(p, Offset(projectionX, projectionY))
     }
 
     // Функция отправки схемы на сервер для проверки
     suspend fun verifyCircuit() {
-        // Создание модели данных схемы для отправки
-        val connectionMap = buildConnections(wires)
-        val elementTypes = circuitElements.associate { it.id to it.type }
-        
         isVerifying = true
         verificationStatus = "Отправка схемы на проверку..."
         
+        // Используем новый сервис для проверки схемы
+        val circuitService = CircuitService()
+        
         try {
-            val response = client.post("${ServerConfig.serverAddress}/lab/electronic/verify") {
-                cookie("JWT", AuthInfo.token!!)
-                header("Content-Type", "application/json")
-                setBody(
-                    StudentElectronicLabRq(
-                        labName = lab.labName,
-                        labId = lab.labId,
-                        // Здесь нужно добавить данные о схеме
-                        // Например, можно передать JSON с описанием элементов и соединений
-                    )
-                )
-            }
+            val result = circuitService.verifyCircuit(
+                labName = lab.labName,
+                labId = lab.labId,
+                elements = circuitElements.toList(),
+                wires = wires.toList()
+            )
             
-            if (response.status == HttpStatusCode.OK) {
-                verificationStatus = "Схема успешно проверена! Работа принята."
-            } else {
-                verificationStatus = "Ошибка при проверке схемы: ${response.status}"
+            // Обрабатываем результат
+            verificationStatus = when (result) {
+                is CircuitService.VerificationResult.Success -> {
+                    result.message
+                }
+                is CircuitService.VerificationResult.Error -> {
+                    "Ошибка: ${result.message}"
+                }
+                is CircuitService.VerificationResult.Exception -> {
+                    "Ошибка: ${result.throwable.message}"
+                }
             }
         } catch (e: Exception) {
-            verificationStatus = "Ошибка при отправке схемы: ${e.message}"
+            verificationStatus = "Непредвиденная ошибка: ${e.message}"
             e.printStackTrace()
         } finally {
             isVerifying = false
         }
     }
 
+    // Переменная для отображения диалога свойств
+    var showPropertiesDialog by remember { mutableStateOf(false) }
+    // Текущий элемент для редактирования свойств
+    var currentEditElement by remember { mutableStateOf<CircuitElement?>(null) }
+
+    // Для определения двойного клика
+    var lastClickTime by remember { mutableStateOf(0L) }
+    val doubleClickTimeoutMs = 300L  // 300мс для распознавания двойного клика
+
+    // Функция для отображения диалога свойств элемента
+    @Composable
+    fun ElementPropertiesDialog(element: CircuitElement, onDismiss: () -> Unit) {
+        val elementType = CircuitElementType.fromDisplayName(element.type) ?: return
+        val properties = CircuitElementProperty.getPropertiesForType(elementType)
+        
+        Dialog(
+            onDismissRequest = onDismiss,
+            properties = DialogProperties()
+        ) {
+            Card(
+                modifier = Modifier.width(400.dp).padding(16.dp),
+                elevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp)
+                ) {
+                    Text(
+                        text = "Свойства элемента ${element.type}",
+                        style = MaterialTheme.typography.h6
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    // Форма для каждого свойства
+                    properties.forEach { property ->
+                        val currentValue = remember { 
+                            mutableStateOf(element.properties[property.name] ?: property.defaultValue) 
+                        }
+                        
+                        Text(
+                            text = property.getDisplayWithUnit(),
+                            style = MaterialTheme.typography.subtitle1
+                        )
+                        
+                        OutlinedTextField(
+                            value = currentValue.value,
+                            onValueChange = { 
+                                // Разрешаем только числовые значения
+                                if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d*$"))) {
+                                    currentValue.value = it
+                                    element.properties[property.name] = it
+                                }
+                            },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        Button(onClick = onDismiss) {
+                            Text("Готово")
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
     // Если включен режим удаления, по клику удаляем элемент или провод
     fun handleDeletion(offset: Offset) {
         // Сначала проверяем провода
@@ -244,6 +415,17 @@ fun CircuitEditorScreen(lab: LabDTO) {
                 wire.from.element.id == elementHit.id || wire.to.element.id == elementHit.id
             }
         }
+    }
+
+    // Показываем диалог свойств, если есть выбранный элемент
+    if (showPropertiesDialog && currentEditElement != null) {
+        ElementPropertiesDialog(
+            element = currentEditElement!!,
+            onDismiss = { 
+                showPropertiesDialog = false
+                currentEditElement = null
+            }
+        )
     }
 
     Row(modifier = Modifier.fillMaxSize()) {
@@ -292,42 +474,72 @@ fun CircuitEditorScreen(lab: LabDTO) {
                                     currentWireFrom = null
                                     currentWireEnd = null
                                 } else {
-                                    // Ищем элемент для перемещения
-                                    val moveElement = circuitElements.asReversed().find { element ->
+                                    // Ищем элемент для перемещения или редактирования свойств
+                                    val elementHit = circuitElements.asReversed().find { element ->
                                         val halfW = element.width / 2
                                         val halfH = element.height / 2
                                         offset.x in (element.x - halfW)..(element.x + halfW) &&
                                                 offset.y in (element.y - halfH)..(element.y + halfH)
                                     }
 
-                                    if (moveElement != null) {
-                                        draggedElement = moveElement
-                                        while (true) {
-                                            val event = awaitPointerEvent()
-                                            val delta = event.changes.first().positionChange()
-                                            moveElement.x += delta.x
-                                            moveElement.y += delta.y
-                                            // Также обновляем позиции всех точек соединения
-                                            moveElement.updateConnectionPoints()
+                                    if (elementHit != null) {
+                                        // Проверяем, было ли это двойное нажатие для открытия свойств
+                                        val currentTime = System.currentTimeMillis()
+                                        if (currentTime - lastClickTime < doubleClickTimeoutMs) {
+                                            // Это двойной клик - открываем диалог свойств
+                                            currentEditElement = elementHit
+                                            showPropertiesDialog = true
+                                            lastClickTime = 0L  // Сбрасываем таймер после двойного клика
+                                        } else {
+                                            // Обычный клик - сохраняем время клика и перемещаем элемент
+                                            lastClickTime = currentTime
                                             
-                                            event.changes.forEach { it.consumeAllChanges() }
-                                            if (event.changes.all { !it.pressed }) break
+                                            draggedElement = elementHit
+                                            while (true) {
+                                                val event = awaitPointerEvent()
+                                                val delta = event.changes.first().positionChange()
+                                                elementHit.x += delta.x
+                                                elementHit.y += delta.y
+                                                // Также обновляем позиции всех точек соединения
+                                                elementHit.updateConnectionPoints()
+                                                
+                                                event.changes.forEach { it.consumeAllChanges() }
+                                                if (event.changes.all { !it.pressed }) break
+                                            }
+                                            draggedElement = null
                                         }
-                                        draggedElement = null
                                     } else if (selectedElementType != null) {
                                         // Создаем новый элемент
                                         val newId = circuitElements.size + 1
-                                        val newElement = CircuitElement(
-                                            id = newId,
-                                            type = selectedElementType!!,
-                                            x = offset.x,
-                                            y = offset.y
-                                        )
-                                        // Создаем точки подключения в зависимости от типа элемента
-                                        val connectionInfos = getConnectionPointsInfoForType(selectedElementType!!)
-                                        newElement.createConnectionPoints(connectionInfos)
+                                        val newElementType = CircuitElementType.fromDisplayName(selectedElementType!!)
                                         
-                                        circuitElements.add(newElement)
+                                        if (newElementType != null) {
+                                            val newElement = CircuitElement(
+                                                id = newId,
+                                                type = selectedElementType!!,
+                                                x = offset.x,
+                                                y = offset.y,
+                                                // Увеличенный размер для транзисторов
+                                                width = if (selectedElementType!!.contains("Транзистор")) 80f else 60f,
+                                                height = if (selectedElementType!!.contains("Транзистор")) 80f else 60f
+                                            )
+                                            
+                                            // Создаем точки подключения в зависимости от типа элемента
+                                            val connectionInfos = getConnectionPointsInfoForType(selectedElementType!!)
+                                            newElement.createConnectionPoints(connectionInfos)
+                                            
+                                            // Инициализируем свойства значениями по умолчанию
+                                            val properties = CircuitElementProperty.getPropertiesForType(newElementType)
+                                            properties.forEach { property ->
+                                                newElement.properties[property.name] = property.defaultValue
+                                            }
+                                            
+                                            circuitElements.add(newElement)
+                                            
+                                            // Сразу показываем диалог для настройки свойств
+                                            currentEditElement = newElement
+                                            showPropertiesDialog = true
+                                        }
                                     }
                                 }
                             }
@@ -378,6 +590,32 @@ fun CircuitEditorScreen(lab: LabDTO) {
                                 radius = 4f,
                                 center = cp.position
                             )
+                        }
+                        
+                        // Отображаем свойства элемента
+                        val propertyText = element.getPropertyDisplay()
+                        if (propertyText.isNotEmpty()) {
+                            try {
+                                // Создаем Skia Paint для текста
+                                val paint = org.jetbrains.skia.Paint().apply {
+                                    color = 0xFF000000.toInt()  // Черный цвет
+                                }
+                                
+                                val font = org.jetbrains.skia.Font()
+                                font.size = 12f
+                                
+                                // Используем Skia API для рисования текста
+                                skCanvas.drawString(
+                                    propertyText,
+                                    element.x,
+                                    element.y + element.height / 2 + 20f, // Чуть ниже элемента
+                                    font,
+                                    paint
+                                )
+                            } catch (e: Exception) {
+                                // Игнорируем ошибки отрисовки текста
+                                e.printStackTrace()
+                            }
                         }
                     }
                 }
@@ -452,66 +690,72 @@ fun CircuitEditorScreen(lab: LabDTO) {
     }
 }
 
-// Класс для описания местоположения точки соединения относительно элемента
-data class ConnectionPointInfo(
-    val relativeX: Float, // относительные координаты от -0.5 до 0.5
-    val relativeY: Float, // относительные координаты от -0.5 до 0.5
-    val type: String // тип соединения (input, output, base, collector, emitter и т.д.)
-)
-
-// Класс для представления точки соединения
+// Класс для представления точек соединения на элементах схемы
 data class ConnectionPoint(
-    val element: CircuitElement,
-    val position: Offset,
-    val type: String
+    val element: CircuitElement, // Элемент, к которому принадлежит точка соединения
+    val type: ConnectionPointType, // Тип точки соединения (ВХОД, ВЫХОД и т.д.)
+    val relativeX: Float, // Относительное положение по X (от -1.0 до 1.0)
+    val relativeY: Float, // Относительное положение по Y (от -1.0 до 1.0)
+    var position: Offset = Offset.Zero // Абсолютная позиция на холсте
 )
 
-// Модель для электрического элемента
+// Класс для хранения информации о положении точек соединения для различных типов элементов
+data class ConnectionPointInfo(
+    val type: ConnectionPointType,
+    val relativeX: Float,
+    val relativeY: Float
+)
+
+// Класс для представления элемента схемы
 data class CircuitElement(
-    val id: Int,
-    val type: String,
-    var x: Float,
-    var y: Float,
-    val width: Float = 60f,
-    val height: Float = 60f,
+    val id: Int, 
+    val type: String, 
+    var x: Float, 
+    var y: Float, 
+    val width: Float, 
+    val height: Float,
     val connectionPoints: MutableList<ConnectionPoint> = mutableListOf(),
-    val connectionInfos: MutableList<ConnectionPointInfo> = mutableListOf()
+    val properties: MutableMap<String, String> = mutableMapOf()
 ) {
-    // Создает точки подключения для элемента на основе информации о типе
+    // Функция для создания точек соединения на основе информации о них
     fun createConnectionPoints(connectionInfos: List<ConnectionPointInfo>) {
-        this.connectionInfos.clear()
-        this.connectionInfos.addAll(connectionInfos)
+        connectionPoints.clear()
         
-        this.connectionPoints.clear()
-        for (info in connectionInfos) {
-            connectionPoints.add(
-                ConnectionPoint(
-                    element = this,
-                    position = Offset(
-                        x = x + info.relativeX * width,
-                        y = y + info.relativeY * height
-                    ),
-                    type = info.type
-                )
+        connectionInfos.forEach { info ->
+            val point = ConnectionPoint(
+                element = this,
+                type = info.type,
+                relativeX = info.relativeX,
+                relativeY = info.relativeY
+            )
+            connectionPoints.add(point)
+        }
+        
+        updateConnectionPoints()
+    }
+    
+    // Функция для обновления позиций точек соединения при перемещении элемента
+    fun updateConnectionPoints() {
+        connectionPoints.forEach { point ->
+            point.position = Offset(
+                x = this.x + point.relativeX * (this.width / 2),
+                y = this.y + point.relativeY * (this.height / 2)
             )
         }
     }
     
-    // Обновляет положение всех точек соединения при перемещении элемента
-    fun updateConnectionPoints() {
-        connectionPoints.clear()
-        for (info in connectionInfos) {
-            connectionPoints.add(
-                ConnectionPoint(
-                    element = this,
-                    position = Offset(
-                        x = x + info.relativeX * width,
-                        y = y + info.relativeY * height
-                    ),
-                    type = info.type
-                )
-            )
-        }
+    // Получение форматированного строкового представления свойства для отображения
+    fun getPropertyDisplay(): String {
+        val elementType = CircuitElementType.fromDisplayName(type) ?: return ""
+        val properties = CircuitElementProperty.getPropertiesForType(elementType)
+        
+        if (properties.isEmpty()) return ""
+        
+        // Берем первое свойство для отображения
+        val property = properties.first()
+        val value = this.properties[property.name] ?: property.defaultValue
+        
+        return "$value ${property.unit}"
     }
 }
 
