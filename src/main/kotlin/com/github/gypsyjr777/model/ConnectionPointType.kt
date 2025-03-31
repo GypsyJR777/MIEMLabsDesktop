@@ -12,7 +12,10 @@ enum class ConnectionPointType(val displayName: String) {
     BASE("База"),
     COLLECTOR("Коллектор"),
     EMITTER("Эмиттер"),
-    DEFAULT("Стандартный");
+    DEFAULT("Стандартный"),
+    ANODE("Анод"),
+    CATHODE("Катод"),
+    GROUND("Заземление");
     
     companion object {
         /**
@@ -38,6 +41,9 @@ enum class ConnectionPointType(val displayName: String) {
                 "base" -> BASE
                 "collector" -> COLLECTOR
                 "emitter" -> EMITTER
+                "anode" -> ANODE
+                "cathode" -> CATHODE
+                "ground" -> GROUND
                 else -> DEFAULT
             }
         }

@@ -12,7 +12,6 @@ import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Paint
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.consumeAllChanges
@@ -28,7 +27,6 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.jvm.javaio.*
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
@@ -68,7 +66,6 @@ fun CircuitEditorWindow(lab: LabDTO, onClose: () -> Unit) {
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun CircuitEditorScreen(lab: LabDTO) {
     // Список доступных компонентов
@@ -79,7 +76,9 @@ fun CircuitEditorScreen(lab: LabDTO) {
         "Источник напряжения", 
         "Источник тока", 
         "Транзистор PNP",
-        "Транзистор NPN"
+        "Транзистор NPN",
+        "Диод",
+        "Заземление"
     )
     
     // Состояние элементов и проводов
@@ -109,6 +108,8 @@ fun CircuitEditorScreen(lab: LabDTO) {
     val currentSourceImage = loadSkiaImage("res/power.png")
     val transistorPNPImage = loadSkiaImage("res/pnp-transistor.png")
     val transistorNPNImage = loadSkiaImage("res/npn-transistor.png")
+    val diodeImage = loadSkiaImage("res/diode.png")
+    val groundImage = loadSkiaImage("res/ground.png")
 
     fun getImageForType(type: String): Image? = when (type) {
         CircuitElementType.RESISTOR.displayName -> resistorImage
@@ -118,6 +119,8 @@ fun CircuitEditorScreen(lab: LabDTO) {
         CircuitElementType.CURRENT_SOURCE.displayName -> currentSourceImage
         CircuitElementType.TRANSISTOR_PNP.displayName -> transistorPNPImage
         CircuitElementType.TRANSISTOR_NPN.displayName -> transistorNPNImage
+        CircuitElementType.DIODE.displayName -> diodeImage
+        CircuitElementType.GROUND.displayName -> groundImage
         else -> null
     }
     
@@ -211,7 +214,99 @@ fun CircuitEditorScreen(lab: LabDTO) {
                     )
                 )
             }
+            CircuitElementType.DIODE.displayName -> {
+                // Для диода (анод и катод)
+                listOf(
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.ANODE,
+                        relativeX = -1.0f,
+                        relativeY = 0.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.CATHODE,
+                        relativeX = 1.0f,
+                        relativeY = 0.0f
+                    )
+                )
+            }
+            CircuitElementType.GROUND.displayName -> {
+                // Для заземления (только один вывод сверху)
+                listOf(
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.GROUND,
+                        relativeX = 0.0f,
+                        relativeY = -1.0f
+                    )
+                )
+            }
             else -> emptyList()
+        }
+    }
+
+    // Получает свойства для определенного типа элемента
+    fun getPropertiesForType(type: String): Map<String, Double> {
+        return when (type) {
+            CircuitElementType.RESISTOR.displayName -> mapOf(
+                "resistance" to 100.0
+            )
+            CircuitElementType.CAPACITOR.displayName -> mapOf(
+                "capacitance" to 1e-6
+            )
+            CircuitElementType.INDUCTOR.displayName -> mapOf(
+                "inductance" to 1e-3
+            )
+            CircuitElementType.VOLTAGE_SOURCE.displayName -> mapOf(
+                "voltage" to 5.0
+            )
+            CircuitElementType.CURRENT_SOURCE.displayName -> mapOf(
+                "current" to 1.0
+            )
+            CircuitElementType.TRANSISTOR_PNP.displayName -> mapOf(
+                "beta" to 100.0
+            )
+            CircuitElementType.TRANSISTOR_NPN.displayName -> mapOf(
+                "beta" to 100.0
+            )
+            CircuitElementType.DIODE.displayName -> mapOf(
+                "forwardVoltage" to 0.7
+            )
+            CircuitElementType.GROUND.displayName -> mapOf()
+            else -> emptyMap()
+        }
+    }
+
+    // Получает отображаемое значение свойства
+    fun getPropertyDisplay(type: String, property: String, value: Double): String {
+        return when (type) {
+            CircuitElementType.RESISTOR.displayName -> when (property) {
+                "resistance" -> "${value} Ом"
+                else -> value.toString()
+            }
+            CircuitElementType.CAPACITOR.displayName -> when (property) {
+                "capacitance" -> "${value * 1e6} мкФ"
+                else -> value.toString()
+            }
+            CircuitElementType.INDUCTOR.displayName -> when (property) {
+                "inductance" -> "${value * 1e3} мГн"
+                else -> value.toString()
+            }
+            CircuitElementType.VOLTAGE_SOURCE.displayName -> when (property) {
+                "voltage" -> "${value} В"
+                else -> value.toString()
+            }
+            CircuitElementType.CURRENT_SOURCE.displayName -> when (property) {
+                "current" -> "${value} А"
+                else -> value.toString()
+            }
+            CircuitElementType.TRANSISTOR_PNP.displayName, CircuitElementType.TRANSISTOR_NPN.displayName -> when (property) {
+                "beta" -> value.toString()
+                else -> value.toString()
+            }
+            CircuitElementType.DIODE.displayName -> when (property) {
+                "forwardVoltage" -> "${value} В"
+                else -> value.toString()
+            }
+            else -> value.toString()
         }
     }
 
@@ -346,8 +441,9 @@ fun CircuitEditorScreen(lab: LabDTO) {
                     
                     // Форма для каждого свойства
                     properties.forEach { property ->
+                        val propertyKey = property.getPropertyKey()
                         val currentValue = remember { 
-                            mutableStateOf(element.properties[property.name] ?: property.defaultValue) 
+                            mutableStateOf(element.properties[propertyKey] ?: property.defaultValue) 
                         }
                         
                         Text(
@@ -361,7 +457,7 @@ fun CircuitEditorScreen(lab: LabDTO) {
                                 // Разрешаем только числовые значения
                                 if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d*$"))) {
                                     currentValue.value = it
-                                    element.properties[property.name] = it
+                                    element.properties[propertyKey] = it
                                 }
                             },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -532,7 +628,7 @@ fun CircuitEditorScreen(lab: LabDTO) {
                                             // Инициализируем свойства значениями по умолчанию
                                             val properties = CircuitElementProperty.getPropertiesForType(newElementType)
                                             properties.forEach { property ->
-                                                newElement.properties[property.name] = property.defaultValue
+                                                newElement.properties[property.getPropertyKey()] = property.defaultValue
                                             }
                                             
                                             circuitElements.add(newElement)

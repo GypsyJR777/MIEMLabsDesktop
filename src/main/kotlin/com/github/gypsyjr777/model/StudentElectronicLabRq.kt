@@ -11,7 +11,7 @@ data class StudentElectronicLabRq(
     val groupNum: String,
     val labName: String? = null,
     val labId: String? = null,
-    val scheme: ElectronicScheme? = null
+    val electronicScheme: ElectronicScheme? = null
 ) {
     /**
      * Конструктор по умолчанию с данными авторизации
@@ -45,19 +45,6 @@ data class StudentElectronicLabRq(
             groupNum = AuthInfo.group!!,
             labName = labName,
             labId = labId,
-            scheme = scheme
-        )
-    
-    /**
-     * Конструктор для запроса с указанием лабораторной работы (с Int ID) и схемы (для проверки)
-     */
-    constructor(labName: String, labId: Int, scheme: ElectronicScheme) :
-        this(
-            studentId = AuthInfo.id!!,
-            studentName = AuthInfo.studentName!!,
-            groupNum = AuthInfo.group!!,
-            labName = labName,
-            labId = labId.toString(),
-            scheme = scheme
+            electronicScheme = scheme
         )
 }

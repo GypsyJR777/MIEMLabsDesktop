@@ -14,7 +14,8 @@ enum class CircuitElementProperty(
     INDUCTANCE("Индуктивность", "мГн", "100"),
     VOLTAGE("Напряжение", "В", "5"),
     CURRENT("Сила тока", "мА", "10"),
-    TRANSISTOR_GAIN("Коэффициент усиления", "", "100");
+    TRANSISTOR_GAIN("Коэффициент усиления", "", "100"),
+    FORWARD_VOLTAGE("Прямое напряжение", "В", "0.7");
     
     /**
      * Возвращает отображаемое имя свойства с единицей измерения
@@ -24,6 +25,21 @@ enum class CircuitElementProperty(
             "$displayName, $unit"
         } else {
             displayName
+        }
+    }
+    
+    /**
+     * Возвращает ключ свойства для использования в API
+     */
+    fun getPropertyKey(): String {
+        return when (this) {
+            RESISTANCE -> "resistance"
+            CAPACITANCE -> "capacitance"
+            INDUCTANCE -> "inductance"
+            VOLTAGE -> "voltage"
+            CURRENT -> "current"
+            TRANSISTOR_GAIN -> "gain"
+            FORWARD_VOLTAGE -> "forwardVoltage"
         }
     }
     
@@ -42,6 +58,8 @@ enum class CircuitElementProperty(
                 CircuitElementType.CURRENT_SOURCE -> listOf(CURRENT)
                 CircuitElementType.TRANSISTOR_PNP, CircuitElementType.TRANSISTOR_NPN -> 
                     listOf(TRANSISTOR_GAIN)
+                CircuitElementType.DIODE -> listOf(FORWARD_VOLTAGE)
+                CircuitElementType.GROUND -> emptyList() // Заземление не имеет свойств
             }
         }
     }

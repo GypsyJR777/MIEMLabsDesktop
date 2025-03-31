@@ -10,7 +10,9 @@ enum class CircuitElementType(val displayName: String) {
     VOLTAGE_SOURCE("Источник напряжения"),
     CURRENT_SOURCE("Источник тока"),
     TRANSISTOR_PNP("Транзистор PNP"),
-    TRANSISTOR_NPN("Транзистор NPN");
+    TRANSISTOR_NPN("Транзистор NPN"),
+    DIODE("Диод"),
+    GROUND("Заземление");
     
     companion object {
         /**
