@@ -15,7 +15,9 @@ enum class ConnectionPointType(val displayName: String) {
     DEFAULT("Стандартный"),
     ANODE("Анод"),
     CATHODE("Катод"),
-    GROUND("Заземление");
+    GROUND("Заземление"),
+    MEASURE_IN("Вход измерения"),
+    MEASURE_OUT("Выход измерения");
     
     companion object {
         /**
@@ -44,6 +46,8 @@ enum class ConnectionPointType(val displayName: String) {
                 "anode" -> ANODE
                 "cathode" -> CATHODE
                 "ground" -> GROUND
+                "measure_in" -> MEASURE_IN
+                "measure_out" -> MEASURE_OUT
                 else -> DEFAULT
             }
         }

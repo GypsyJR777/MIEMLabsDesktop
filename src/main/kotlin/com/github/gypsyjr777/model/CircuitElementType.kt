@@ -12,7 +12,9 @@ enum class CircuitElementType(val displayName: String) {
     TRANSISTOR_PNP("Транзистор PNP"),
     TRANSISTOR_NPN("Транзистор NPN"),
     DIODE("Диод"),
-    GROUND("Заземление");
+    GROUND("Заземление"),
+    AMMETER("Амперметр"),
+    VOLTMETER("Вольтметр");
     
     companion object {
         /**

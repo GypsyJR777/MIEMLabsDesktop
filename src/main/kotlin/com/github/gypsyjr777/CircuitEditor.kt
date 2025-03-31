@@ -2,12 +2,14 @@ package com.github.gypsyjr777
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -78,7 +80,9 @@ fun CircuitEditorScreen(lab: LabDTO) {
         "Транзистор PNP",
         "Транзистор NPN",
         "Диод",
-        "Заземление"
+        "Заземление",
+        "Амперметр",
+        "Вольтметр"
     )
     
     // Состояние элементов и проводов
@@ -110,6 +114,8 @@ fun CircuitEditorScreen(lab: LabDTO) {
     val transistorNPNImage = loadSkiaImage("res/npn-transistor.png")
     val diodeImage = loadSkiaImage("res/diode.png")
     val groundImage = loadSkiaImage("res/ground.png")
+    val ammeterImage = loadSkiaImage("res/ammeter.png")
+    val voltmeterImage = loadSkiaImage("res/voltmeter.png")
 
     fun getImageForType(type: String): Image? = when (type) {
         CircuitElementType.RESISTOR.displayName -> resistorImage
@@ -121,6 +127,8 @@ fun CircuitEditorScreen(lab: LabDTO) {
         CircuitElementType.TRANSISTOR_NPN.displayName -> transistorNPNImage
         CircuitElementType.DIODE.displayName -> diodeImage
         CircuitElementType.GROUND.displayName -> groundImage
+        CircuitElementType.AMMETER.displayName -> ammeterImage
+        CircuitElementType.VOLTMETER.displayName -> voltmeterImage
         else -> null
     }
     
@@ -239,6 +247,21 @@ fun CircuitEditorScreen(lab: LabDTO) {
                     )
                 )
             }
+            CircuitElementType.AMMETER.displayName, CircuitElementType.VOLTMETER.displayName -> {
+                // Для измерительных приборов
+                listOf(
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.MEASURE_IN,
+                        relativeX = -1.0f,
+                        relativeY = 0.0f
+                    ),
+                    ConnectionPointInfo(
+                        type = ConnectionPointType.MEASURE_OUT,
+                        relativeX = 1.0f,
+                        relativeY = 0.0f
+                    )
+                )
+            }
             else -> emptyList()
         }
     }
@@ -269,6 +292,12 @@ fun CircuitEditorScreen(lab: LabDTO) {
             )
             CircuitElementType.DIODE.displayName -> mapOf(
                 "forwardVoltage" to 0.7
+            )
+            CircuitElementType.AMMETER.displayName -> mapOf(
+                "internalResistance" to 1.0
+            )
+            CircuitElementType.VOLTMETER.displayName -> mapOf(
+                "internalResistance" to 1000000.0 // 1 MΩ высокое входное сопротивление для вольтметра
             )
             CircuitElementType.GROUND.displayName -> mapOf()
             else -> emptyMap()
@@ -304,6 +333,10 @@ fun CircuitEditorScreen(lab: LabDTO) {
             }
             CircuitElementType.DIODE.displayName -> when (property) {
                 "forwardVoltage" -> "${value} В"
+                else -> value.toString()
+            }
+            CircuitElementType.AMMETER.displayName, CircuitElementType.VOLTMETER.displayName -> when (property) {
+                "internalResistance" -> "${value} Ом"
                 else -> value.toString()
             }
             else -> value.toString()
@@ -729,16 +762,60 @@ fun CircuitEditorScreen(lab: LabDTO) {
             Text("Элементы схемы", style = MaterialTheme.typography.h6)
             Spacer(modifier = Modifier.height(8.dp))
             
-            availableComponents.forEach { component ->
-                Button(
-                    onClick = { selectedElementType = component },
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+            // Сетка элементов в 2 столбца
+            val rows = (availableComponents.size + 1) / 2
+            for (row in 0 until rows) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Text(component)
+                    for (col in 0..1) {
+                        val index = row * 2 + col
+                        if (index < availableComponents.size) {
+                            val component = availableComponents[index]
+                            val typeEnum = CircuitElementType.fromDisplayName(component)
+                            
+                            Column(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(4.dp)
+                                    .background(
+                                        if (selectedElementType == component) Color.LightGray else Color.Transparent, 
+                                        shape = androidx.compose.foundation.shape.RoundedCornerShape(4.dp)
+                                    )
+                                    .clickable { selectedElementType = component }
+                                    .padding(4.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                val image = getImageForType(component)
+                                if (image != null) {
+                                    Canvas(
+                                        modifier = Modifier
+                                            .size(40.dp)
+                                            .padding(4.dp)
+                                    ) {
+                                        drawIntoCanvas { canvas ->
+                                            val skCanvas = canvas.nativeCanvas
+                                            val dstRect = Rect.makeXYWH(0f, 0f, 40f, 40f)
+                                            skCanvas.drawImageRect(image, dstRect)
+                                        }
+                                    }
+                                }
+                                Text(
+                                    text = component,
+                                    style = MaterialTheme.typography.caption,
+                                    maxLines = 1
+                                )
+                            }
+                        } else {
+                            // Пустая ячейка для заполнения сетки
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
+                    }
                 }
             }
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
             Button(
                 onClick = { isDeleteMode = !isDeleteMode },
                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)

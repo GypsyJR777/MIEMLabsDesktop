@@ -15,7 +15,8 @@ enum class CircuitElementProperty(
     VOLTAGE("Напряжение", "В", "5"),
     CURRENT("Сила тока", "мА", "10"),
     TRANSISTOR_GAIN("Коэффициент усиления", "", "100"),
-    FORWARD_VOLTAGE("Прямое напряжение", "В", "0.7");
+    FORWARD_VOLTAGE("Прямое напряжение", "В", "0.7"),
+    INTERNAL_RESISTANCE("Внутреннее сопротивление", "Ом", "1");
     
     /**
      * Возвращает отображаемое имя свойства с единицей измерения
@@ -40,6 +41,7 @@ enum class CircuitElementProperty(
             CURRENT -> "current"
             TRANSISTOR_GAIN -> "gain"
             FORWARD_VOLTAGE -> "forwardVoltage"
+            INTERNAL_RESISTANCE -> "internalResistance"
         }
     }
     
@@ -60,6 +62,8 @@ enum class CircuitElementProperty(
                     listOf(TRANSISTOR_GAIN)
                 CircuitElementType.DIODE -> listOf(FORWARD_VOLTAGE)
                 CircuitElementType.GROUND -> emptyList() // Заземление не имеет свойств
+                CircuitElementType.AMMETER -> listOf(INTERNAL_RESISTANCE)
+                CircuitElementType.VOLTMETER -> listOf(INTERNAL_RESISTANCE)
             }
         }
     }
