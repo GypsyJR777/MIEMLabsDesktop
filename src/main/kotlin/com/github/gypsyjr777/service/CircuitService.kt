@@ -20,14 +20,18 @@ import io.ktor.http.*
  */
 class CircuitService {
     /**
-     * Запечатанный класс для представления результата проверки схемы
+     * Запечатанный класс для представления результата проверки и симуляции схемы
      */
     sealed class VerificationResult {
         /**
          * Успешная проверка схемы
          * @param message сообщение об успешной проверке
+         * @param simulationData данные результатов симуляции
          */
-        data class Success(val message: String) : VerificationResult()
+        data class Success(
+            val message: String,
+            val simulationData: Map<String, Any> = emptyMap()
+        ) : VerificationResult()
         
         /**
          * Ошибка проверки схемы
@@ -43,12 +47,12 @@ class CircuitService {
     }
     
     /**
-     * Проверяет электрическую схему, отправляя её на сервер
+     * Проверяет и симулирует электрическую схему, отправляя её на сервер
      * @param labName название лабораторной работы
      * @param labId идентификатор лабораторной работы
      * @param elements список элементов схемы
      * @param wires список проводов (соединений между элементами)
-     * @return результат проверки схемы
+     * @return результат проверки и симуляции схемы
      */
     suspend fun verifyCircuit(
         labName: String,
@@ -68,7 +72,7 @@ class CircuitService {
             )
             
             // Отправляем запрос на сервер
-            val response: HttpResponse = client.post("${ServerConfig.serverAddress}/lab/electronic/verify") {
+            val response: HttpResponse = client.post("${ServerConfig.serverAddress}/lab/electronic/simulate") {
                 cookie("JWT", AuthInfo.token!!)
                 header("Content-Type", "application/json")
                 setBody(request)
@@ -77,7 +81,31 @@ class CircuitService {
             // Проверяем ответ
             return when (response.status) {
                 HttpStatusCode.OK -> {
-                    VerificationResult.Success("Схема успешно проверена!")
+                    // Десериализуем ответ в SimulationResultResponse
+                    val responseBody = response.bodyAsText()
+                    try {
+                        // Используем Jackson для десериализации
+                        val objectMapper = com.fasterxml.jackson.databind.ObjectMapper()
+                        // Настройка для поддержки Kotlin data классов
+                        objectMapper.registerModule(com.fasterxml.jackson.module.kotlin.KotlinModule.Builder().build())
+                        
+                        val simulationResult = objectMapper.readValue(
+                            responseBody,
+                            com.github.gypsyjr777.model.SimulationResultResponse::class.java
+                        )
+                        
+                        if (simulationResult.success) {
+                            VerificationResult.Success(
+                                message = simulationResult.message,
+                                simulationData = simulationResult.data
+                            )
+                        } else {
+                            VerificationResult.Error(simulationResult.message)
+                        }
+                    } catch (e: Exception) {
+                        // Если не смогли распарсить ответ как SimulationResultResponse
+                        VerificationResult.Success("Схема успешно проверена!")
+                    }
                 }
                 HttpStatusCode.BadRequest -> {
                     VerificationResult.Error("Ошибка в схеме: ${response.bodyAsText()}")
