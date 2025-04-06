@@ -92,7 +92,8 @@ fun AuthenticationScreen(onLoginSuccess: (Boolean) -> Unit) {
                 onValueChange = { manualToken = it },
                 label = { Text("Вставьте код аутентификации") },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true
             )
             Spacer(modifier = Modifier.height(8.dp))
             Button(onClick = {
