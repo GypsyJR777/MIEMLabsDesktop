@@ -53,7 +53,8 @@ fun getAllLabs(): List<LabDTO> = runBlocking {
         HttpStatusCode.OK -> {
             val result: Map<String, Any> = response.call.body()
             val labs = ArrayList<LabDTO>()
-            (result["labs"] as ArrayList<Map<String, String>>).forEach { labs.add(LabDTO(it)) }
+            if (result["labs"] != null)
+                (result["labs"] as ArrayList<Map<String, String>>).forEach { labs.add(LabDTO(it)) }
             return@runBlocking labs
         }
 

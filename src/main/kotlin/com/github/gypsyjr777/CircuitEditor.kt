@@ -99,6 +99,10 @@ fun CircuitEditorScreen(lab: LabDTO) {
     var verificationStatus by remember { mutableStateOf<String?>(null) }
     // Индикатор загрузки при проверке схемы
     var isVerifying by remember { mutableStateOf(false) }
+    // Переменная для отображения диалога с результатами симуляции
+    var showSimulationResultDialog by remember { mutableStateOf(false) }
+    // Данные симуляции
+    var simulationData by remember { mutableStateOf<Map<String, Any>>(emptyMap()) }
 
     // Для временного проводка (режим соединения)
     var currentWireFrom by remember { mutableStateOf<ConnectionPoint?>(null) }
@@ -423,6 +427,11 @@ fun CircuitEditorScreen(lab: LabDTO) {
             // Обрабатываем результат
             verificationStatus = when (result) {
                 is CircuitService.VerificationResult.Success -> {
+                    // При успешной симуляции показываем диалоговое окно с результатами
+                    if (result.simulationData.isNotEmpty()) {
+                        simulationData = result.simulationData
+                        showSimulationResultDialog = true
+                    }
                     result.message
                 }
                 is CircuitService.VerificationResult.Error -> {
@@ -444,6 +453,7 @@ fun CircuitEditorScreen(lab: LabDTO) {
     var showPropertiesDialog by remember { mutableStateOf(false) }
     // Текущий элемент для редактирования свойств
     var currentEditElement by remember { mutableStateOf<CircuitElement?>(null) }
+
 
     // Для определения двойного клика
     var lastClickTime by remember { mutableStateOf(0L) }
@@ -555,6 +565,14 @@ fun CircuitEditorScreen(lab: LabDTO) {
                 showPropertiesDialog = false
                 currentEditElement = null
             }
+        )
+    }
+
+    // Показываем диалог с результатами симуляции
+    if (showSimulationResultDialog) {
+        SimulationResultDialog(
+            data = simulationData,
+            onDismiss = { showSimulationResultDialog = false }
         )
     }
 
@@ -927,7 +945,8 @@ data class CircuitElement(
         
         // Берем первое свойство для отображения
         val property = properties.first()
-        val value = this.properties[property.name] ?: property.defaultValue
+        val propertyKey = property.getPropertyKey()
+        val value = this.properties[propertyKey] ?: property.defaultValue
         
         return "$value ${property.unit}"
     }
@@ -961,5 +980,86 @@ fun loadSkiaImage(resourcePath: String): Image? {
         val stream = Thread.currentThread().contextClassLoader.getResourceAsStream(resourcePath)
         val bytes = stream?.readBytes() ?: return@remember null
         Image.makeFromEncoded(bytes)
+    }
+}
+
+// Добавим новую функцию для диалогового окна с результатами симуляции
+@Composable
+fun SimulationResultDialog(data: Map<String, Any>, onDismiss: () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnClickOutside = true)
+    ) {
+        Card(
+            modifier = Modifier.width(500.dp).padding(16.dp),
+            elevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = "Результаты симуляции",
+                    style = MaterialTheme.typography.h6
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Отображаем данные симуляции
+                data.forEach { (key, value) ->
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = key,
+                            style = MaterialTheme.typography.subtitle1,
+                            color = Color.Gray
+                        )
+                        
+                        when (value) {
+                            is Map<*, *> -> {
+                                value.entries.forEach { entry ->
+                                    Row(
+                                        modifier = Modifier.padding(start = 16.dp, top = 4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "${entry.key}: ",
+                                            style = MaterialTheme.typography.body2,
+                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                        )
+                                        Text(
+                                            text = "${entry.value}",
+                                            style = MaterialTheme.typography.body2
+                                        )
+                                    }
+                                }
+                            }
+                            is List<*> -> {
+                                value.forEachIndexed { index, item ->
+                                    Text(
+                                        text = "$index: $item",
+                                        style = MaterialTheme.typography.body2,
+                                        modifier = Modifier.padding(start = 16.dp, top = 2.dp)
+                                    )
+                                }
+                            }
+                            else -> {
+                                Text(
+                                    text = value.toString(),
+                                    style = MaterialTheme.typography.body1
+                                )
+                            }
+                        }
+                    }
+                    Divider(modifier = Modifier.padding(vertical = 8.dp))
+                }
+                
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Закрыть")
+                }
+            }
+        }
     }
 } 
