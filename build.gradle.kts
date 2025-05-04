@@ -33,11 +33,6 @@ dependencies {
     implementation("io.ktor:ktor-serialization-jackson:3.1.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.18.2")
     implementation("io.ktor:ktor-client-cio-jvm:3.1.0")
-//    implementation("io.ktor:ktor-server-auth:3.1.0")
-//    implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
-//    implementation("io.github.kevinnzou:compose-webview-multiplatform:1.9.40")
-//    implementation("dev.datlag:kcef:$version")
-//    implementation("org.jetbrains.androidx.navigation:navigation-compose:2.8.0-alpha08")
 }
 
 compose.desktop {

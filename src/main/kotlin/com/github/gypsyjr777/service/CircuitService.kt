@@ -73,16 +73,20 @@ class CircuitService {
             
             // Отправляем запрос на сервер
             val response: HttpResponse = client.post("${ServerConfig.serverAddress}/lab/electronic/simulate") {
-                cookie("JWT", AuthInfo.token!!)
+                // Используем все куки из AuthInfo
+                AuthInfo.addCookiesToRequest(this)
                 header("Content-Type", "application/json")
                 setBody(request)
             }
+
             
             // Проверяем ответ
             return when (response.status) {
                 HttpStatusCode.OK -> {
                     // Десериализуем ответ в SimulationResultResponse
                     val responseBody = response.bodyAsText()
+                    // Обновляем куки из ответа сервера
+                    AuthInfo.updateCookiesFromResponse(response.setCookie())
                     try {
                         // Используем Jackson для десериализации
                         val objectMapper = com.fasterxml.jackson.databind.ObjectMapper()

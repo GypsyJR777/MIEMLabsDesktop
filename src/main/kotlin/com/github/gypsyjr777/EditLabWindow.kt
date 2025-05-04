@@ -43,22 +43,24 @@ fun EditLabWindow(lab: LabDTO, onClose: () -> Unit) {
     fun downloadCurrentFile() {
         runBlocking {
             val response: HttpResponse = client.get("${ServerConfig.serverAddress}/lab/electronic/get") {
-                cookie("JWT", AuthInfo.token!!)
+                AuthInfo.addCookiesToRequest(this)
                 header("Content-Type", "application/json")
                 setBody(StudentElectronicLabRq(lab.labName, lab.labId))
             }
 
+
             if (response.status == HttpStatusCode.OK) {
+                AuthInfo.updateCookiesFromResponse(response.setCookie())
                 val tempFile = File.createTempFile("lab_description", ".pdf")
                 Files.copy(response.rawContent.toInputStream(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
                 Desktop.getDesktop().open(tempFile)
             } else {
-                println("Ошибка при скачивании файла: \${response.status}")
+                println("Ошибка при скачивании файла: ${response.status}")
             }
         }
     }
 
-    Window(onCloseRequest = onClose, title = "Редактирование лабораторной работы - \${lab.labName}") {
+    Window(onCloseRequest = onClose, title = "Редактирование лабораторной работы - ${lab.labName}") {
         Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
             Text("Редактирование лабораторной работы", style = MaterialTheme.typography.h4)
             Spacer(modifier = Modifier.height(16.dp))
@@ -80,7 +82,7 @@ fun EditLabWindow(lab: LabDTO, onClose: () -> Unit) {
                 Text("Выбрать новый файл")
             }
             labFile?.let {
-                Text("Выбранный файл: \${it.name}", style = MaterialTheme.typography.body2)
+                Text("Выбранный файл: ${it.name}", style = MaterialTheme.typography.body2)
             }
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { downloadCurrentFile() }, modifier = Modifier.fillMaxWidth()) {

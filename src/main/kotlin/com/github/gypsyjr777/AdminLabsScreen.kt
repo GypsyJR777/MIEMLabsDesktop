@@ -24,11 +24,13 @@ fun AdminLabsScreen(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         val response: HttpResponse = client.get("${ServerConfig.serverAddress}/admin/labs") {
-            cookie("JWT", AuthInfo.token!!)
+            AuthInfo.addCookiesToRequest(this)
             header("Content-Type", "application/json")
         }
 
+
         if (response.status == HttpStatusCode.OK) {
+            AuthInfo.updateCookiesFromResponse(response.setCookie())
             val result: Map<String, Any> = response.call.body()
             labsList = (result["labs"] as ArrayList<Map<String, String>>).map { LabDTO(it) }
         } else {

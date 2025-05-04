@@ -126,10 +126,6 @@ fun ServerConfigScreen(onConfigComplete: () -> Unit) {
                     // Если соединение успешно, сохраняем адрес в конфигурации
                     ServerConfig.serverAddress = serverAddress
                     
-                    // Инициализируем HTTP клиент
-                    statusMessage = "Инициализация HTTP-клиента..."
-                    initializeHttpClient()
-                    
                     // Переходим к следующему экрану
                     statusMessage = "Переход к экрану авторизации..."
                     onConfigComplete()

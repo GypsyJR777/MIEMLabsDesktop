@@ -43,12 +43,15 @@ fun CircuitEditorWindow(lab: LabDTO, onClose: () -> Unit) {
     // Скачиваем файл с описанием лабораторной работы
     LaunchedEffect(lab) {
         val response: HttpResponse = client.get("${ServerConfig.serverAddress}/lab/electronic/get") {
-            cookie("JWT", AuthInfo.token!!)
+            // Используем все куки из AuthInfo
+            AuthInfo.addCookiesToRequest(this)
             header("Content-Type", "application/json")
             setBody(StudentElectronicLabRq(lab.labName, lab.labId))
         }
 
         if (response.status == HttpStatusCode.OK) {
+            // Обновляем куки из ответа сервера
+            AuthInfo.updateCookiesFromResponse(response.setCookie())
             val tempFile = File.createTempFile("lab_description", ".pdf")
             Files.copy(response.rawContent.toInputStream(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING)
             Desktop.getDesktop().open(tempFile)
@@ -103,6 +106,10 @@ fun CircuitEditorScreen(lab: LabDTO) {
     var showSimulationResultDialog by remember { mutableStateOf(false) }
     // Данные симуляции
     var simulationData by remember { mutableStateOf<Map<String, Any>>(emptyMap()) }
+    // Переменная для отображения диалога с ошибкой
+    var showErrorDialog by remember { mutableStateOf(false) }
+    // Текст ошибки
+    var errorMessage by remember { mutableStateOf("") }
 
     // Для временного проводка (режим соединения)
     var currentWireFrom by remember { mutableStateOf<ConnectionPoint?>(null) }
@@ -435,14 +442,22 @@ fun CircuitEditorScreen(lab: LabDTO) {
                     result.message
                 }
                 is CircuitService.VerificationResult.Error -> {
+                    // При ошибке показываем диалоговое окно с информацией об ошибке
+                    errorMessage = result.message
+                    showErrorDialog = true
                     "Ошибка: ${result.message}"
                 }
                 is CircuitService.VerificationResult.Exception -> {
+                    // При исключении также показываем диалоговое окно с ошибкой
+                    errorMessage = result.throwable.message ?: "Неизвестная ошибка"
+                    showErrorDialog = true
                     "Ошибка: ${result.throwable.message}"
                 }
             }
         } catch (e: Exception) {
             verificationStatus = "Непредвиденная ошибка: ${e.message}"
+            errorMessage = e.message ?: "Неизвестная ошибка"
+            showErrorDialog = true
             e.printStackTrace()
         } finally {
             isVerifying = false
@@ -573,6 +588,14 @@ fun CircuitEditorScreen(lab: LabDTO) {
         SimulationResultDialog(
             data = simulationData,
             onDismiss = { showSimulationResultDialog = false }
+        )
+    }
+
+    // Показываем диалог с ошибкой
+    if (showErrorDialog) {
+        ErrorDialog(
+            message = errorMessage,
+            onDismiss = { showErrorDialog = false }
         )
     }
 
@@ -1053,6 +1076,44 @@ fun SimulationResultDialog(data: Map<String, Any>, onDismiss: () -> Unit) {
                     Divider(modifier = Modifier.padding(vertical = 8.dp))
                 }
                 
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End)
+                ) {
+                    Text("Закрыть")
+                }
+            }
+        }
+    }
+}
+
+// Добавим новую функцию для диалогового окна с ошибкой
+@Composable
+fun ErrorDialog(message: String, onDismiss: () -> Unit) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(dismissOnClickOutside = true)
+    ) {
+        Card(
+            modifier = Modifier.width(400.dp).padding(16.dp),
+            elevation = 8.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp)
+            ) {
+                Text(
+                    text = "Ошибка симуляции",
+                    style = MaterialTheme.typography.h6,
+                    color = Color.Red
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = message,
+                    style = MaterialTheme.typography.body1
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.align(Alignment.End)

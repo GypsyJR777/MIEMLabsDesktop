@@ -35,13 +35,27 @@ fun AuthenticationScreen(onLoginSuccess: (Boolean) -> Unit) {
         val server = embeddedServer(Netty, port = 8085, host = "127.0.0.1") {
             routing {
                 get("/") {
-                    val codeIn = call.request.cookies["JWT"]
-                    if (codeIn != null) {
+                    // Получаем все куки из запроса
+                    val jwtCookie = call.request.cookies["JWT"]
+                    val oauth2StateCookie = call.request.cookies["OAUTH2_STATE"]
+                    val oauth2PkceCookie = call.request.cookies["OAUTH2_PKCE"]
+                    val openidNonceCookie = call.request.cookies["OPENID_NONCE"]
+                    
+                    if (jwtCookie != null) {
                         call.respondText(
-                            "Аутентификация успешна. Код авторизации: $codeIn",
+                            "Аутентификация успешна. Код авторизации: $jwtCookie",
                             ContentType.Text.Plain
                         )
-                        token = codeIn
+                        
+                        // Сохраняем все куки
+                        AuthInfo.cookies[AuthInfo.COOKIE_JWT] = jwtCookie
+                        oauth2StateCookie?.let { AuthInfo.cookies[AuthInfo.COOKIE_OAUTH2_STATE] = it }
+                        oauth2PkceCookie?.let { AuthInfo.cookies[AuthInfo.COOKIE_OAUTH2_PKCE] = it }
+                        openidNonceCookie?.let { AuthInfo.cookies[AuthInfo.COOKIE_OPENID_NONCE] = it }
+                        
+                        // Обновляем token для обратной совместимости
+                        AuthInfo.token = jwtCookie
+                        token = jwtCookie
                     } else {
                         call.respondText(
                             "Ошибка: код не получен. Пожалуйста, почистите Cookie",
@@ -119,13 +133,24 @@ fun AuthenticationScreen(onLoginSuccess: (Boolean) -> Unit) {
 
 fun onTokenReceived(token: String): Boolean = runBlocking {
     val response: HttpResponse = client.post("${ServerConfig.serverAddress}/") {
-        cookie("JWT", token)
-        renderCookieHeader(Cookie("JWT", token))
+        // Устанавливаем все куки, если они есть
+        if (AuthInfo.cookies.isNotEmpty()) {
+            AuthInfo.addCookiesToRequest(this)
+        } else {
+            // Обратная совместимость, если в cookies ничего нет
+            cookie("JWT", token)
+            renderCookieHeader(Cookie("JWT", token))
+            // Добавляем JWT в cookies
+            AuthInfo.cookies[AuthInfo.COOKIE_JWT] = token
+        }
     }.call.response
+    
 
     when (response.status) {
         HttpStatusCode.Unauthorized -> return@runBlocking false
         HttpStatusCode.Accepted -> {
+            // Обновляем куки из ответа сервера
+            AuthInfo.updateCookiesFromResponse(response.setCookie())
             val decodedToken = JWTParser.decode(token)
             AuthInfo.id = decodedToken["email_hse"].toString()
             AuthInfo.group = decodedToken["student_group_name"].toString()

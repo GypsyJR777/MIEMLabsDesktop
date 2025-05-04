@@ -71,14 +71,18 @@ class LabService {
                         })
                     }
                 ) {
-                cookie("JWT", AuthInfo.token!!)
+                // Используем все куки из AuthInfo
+                AuthInfo.addCookiesToRequest(this)
                 onUpload { bytesSentTotal, contentLength ->
                     println("Sent $bytesSentTotal bytes from $contentLength")
                 }
             }
 
+
             val responseText = response.bodyAsText()
             println("Ответ сервера: $responseText")
+            // Обновляем куки из ответа сервера
+            AuthInfo.updateCookiesFromResponse(response.setCookie())
 
             if (response.status == HttpStatusCode.OK || response.status == HttpStatusCode.Created) {
                 ApiResult.Success(responseText)
