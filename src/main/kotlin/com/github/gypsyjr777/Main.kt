@@ -14,6 +14,9 @@ import io.ktor.client.statement.*
 import io.ktor.http.*
 import io.ktor.serialization.jackson.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 
 // Объект для хранения настроек сервера
 object ServerConfig {
@@ -44,6 +47,16 @@ object AuthInfo {
     val COOKIE_OAUTH2_STATE = "OAUTH2_STATE"
     val COOKIE_OAUTH2_PKCE = "OAUTH2_PKCE"
     val COOKIE_OPENID_NONCE = "OPENID_NONCE"
+    
+    // Обработка ошибки аутентификации - сброс всех аутентификационных данных
+    fun resetAuthentication() {
+        token = null
+        id = null
+        studentName = null
+        group = null
+        staff = null
+        cookies.clear()
+    }
     
     // Добавляет куки к запросу
     fun addCookiesToRequest(builder: HttpRequestBuilder) {
@@ -80,7 +93,13 @@ fun getAllLabs(): List<LabDTO> = runBlocking {
 
 
     when (response.status) {
-        HttpStatusCode.Unauthorized -> emptyList()
+        HttpStatusCode.Unauthorized -> {
+            // Триггерим сброс авторизации
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                AppEvents.triggerAuthReset()
+            }
+            emptyList()
+        }
         HttpStatusCode.OK -> {
             val result: Map<String, Any> = response.call.body()
             val labs = ArrayList<LabDTO>()

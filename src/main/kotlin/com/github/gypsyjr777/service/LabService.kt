@@ -1,6 +1,7 @@
 package com.github.gypsyjr777.service
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.github.gypsyjr777.AppEvents
 import com.github.gypsyjr777.AuthInfo
 import com.github.gypsyjr777.ServerConfig
 import com.github.gypsyjr777.client
@@ -13,6 +14,9 @@ import io.ktor.http.*
 import io.ktor.http.content.*
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 /**
  * Сервис для работы с API лабораторных работ
@@ -86,6 +90,12 @@ class LabService {
 
             if (response.status == HttpStatusCode.OK || response.status == HttpStatusCode.Created) {
                 ApiResult.Success(responseText)
+            } else if (response.status == HttpStatusCode.Unauthorized) {
+                // Триггерим сброс авторизации
+                CoroutineScope(Dispatchers.Main).launch {
+                    AppEvents.triggerAuthReset()
+                }
+                ApiResult.Error(response.status, "Необходима повторная авторизация")
             } else {
                 ApiResult.Error(response.status, responseText)
             }

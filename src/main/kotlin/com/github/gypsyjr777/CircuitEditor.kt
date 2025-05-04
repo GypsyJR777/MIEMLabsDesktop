@@ -7,6 +7,8 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.forEachGesture
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -30,6 +32,9 @@ import io.ktor.http.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.jvm.javaio.*
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import org.jetbrains.skia.Image
 import org.jetbrains.skia.Rect
 import java.awt.Desktop
@@ -446,6 +451,13 @@ fun CircuitEditorScreen(lab: LabDTO) {
                     errorMessage = result.message
                     showErrorDialog = true
                     "Ошибка: ${result.message}"
+                }
+                is CircuitService.VerificationResult.Unauthorized -> {
+                    // При ошибке авторизации перенаправляем на экран авторизации
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                        AppEvents.triggerAuthReset()
+                    }
+                    "Необходима повторная авторизация"
                 }
                 is CircuitService.VerificationResult.Exception -> {
                     // При исключении также показываем диалоговое окно с ошибкой
@@ -1009,12 +1021,14 @@ fun loadSkiaImage(resourcePath: String): Image? {
 // Добавим новую функцию для диалогового окна с результатами симуляции
 @Composable
 fun SimulationResultDialog(data: Map<String, Any>, onDismiss: () -> Unit) {
+    val scrollState = rememberScrollState()
+    
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnClickOutside = true)
     ) {
         Card(
-            modifier = Modifier.width(500.dp).padding(16.dp),
+            modifier = Modifier.width(500.dp).padding(16.dp).heightIn(max = 500.dp),
             elevation = 8.dp
         ) {
             Column(
@@ -1026,56 +1040,64 @@ fun SimulationResultDialog(data: Map<String, Any>, onDismiss: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Отображаем данные симуляции
-                data.forEach { (key, value) ->
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                    ) {
-                        Text(
-                            text = key,
-                            style = MaterialTheme.typography.subtitle1,
-                            color = Color.Gray
-                        )
-                        
-                        when (value) {
-                            is Map<*, *> -> {
-                                value.entries.forEach { entry ->
-                                    Row(
-                                        modifier = Modifier.padding(start = 16.dp, top = 4.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
+                // Контейнер с прокруткой для данных симуляции
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(scrollState)
+                ) {
+                    // Отображаем данные симуляции
+                    data.forEach { (key, value) ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = key,
+                                style = MaterialTheme.typography.subtitle1,
+                                color = Color.Gray
+                            )
+                            
+                            when (value) {
+                                is Map<*, *> -> {
+                                    value.entries.forEach { entry ->
+                                        Row(
+                                            modifier = Modifier.padding(start = 16.dp, top = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "${entry.key}: ",
+                                                style = MaterialTheme.typography.body2,
+                                                fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
+                                            )
+                                            Text(
+                                                text = "${entry.value}",
+                                                style = MaterialTheme.typography.body2
+                                            )
+                                        }
+                                    }
+                                }
+                                is List<*> -> {
+                                    value.forEachIndexed { index, item ->
                                         Text(
-                                            text = "${entry.key}: ",
+                                            text = "$index: $item",
                                             style = MaterialTheme.typography.body2,
-                                            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold
-                                        )
-                                        Text(
-                                            text = "${entry.value}",
-                                            style = MaterialTheme.typography.body2
+                                            modifier = Modifier.padding(start = 16.dp, top = 2.dp)
                                         )
                                     }
                                 }
-                            }
-                            is List<*> -> {
-                                value.forEachIndexed { index, item ->
+                                else -> {
                                     Text(
-                                        text = "$index: $item",
-                                        style = MaterialTheme.typography.body2,
-                                        modifier = Modifier.padding(start = 16.dp, top = 2.dp)
+                                        text = value.toString(),
+                                        style = MaterialTheme.typography.body1
                                     )
                                 }
                             }
-                            else -> {
-                                Text(
-                                    text = value.toString(),
-                                    style = MaterialTheme.typography.body1
-                                )
-                            }
                         }
+                        Divider(modifier = Modifier.padding(vertical = 8.dp))
                     }
-                    Divider(modifier = Modifier.padding(vertical = 8.dp))
                 }
                 
+                Spacer(modifier = Modifier.height(8.dp))
                 Button(
                     onClick = onDismiss,
                     modifier = Modifier.align(Alignment.End)
@@ -1090,12 +1112,14 @@ fun SimulationResultDialog(data: Map<String, Any>, onDismiss: () -> Unit) {
 // Добавим новую функцию для диалогового окна с ошибкой
 @Composable
 fun ErrorDialog(message: String, onDismiss: () -> Unit) {
+    val scrollState = rememberScrollState()
+    
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(dismissOnClickOutside = true)
     ) {
         Card(
-            modifier = Modifier.width(400.dp).padding(16.dp),
+            modifier = Modifier.width(400.dp).padding(16.dp).heightIn(max = 400.dp),
             elevation = 8.dp
         ) {
             Column(
@@ -1108,10 +1132,16 @@ fun ErrorDialog(message: String, onDismiss: () -> Unit) {
                 )
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                Text(
-                    text = message,
-                    style = MaterialTheme.typography.body1
-                )
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .verticalScroll(scrollState)
+                ) {
+                    Text(
+                        text = message,
+                        style = MaterialTheme.typography.body1
+                    )
+                }
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 Button(

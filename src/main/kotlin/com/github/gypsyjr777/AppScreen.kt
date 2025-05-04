@@ -2,6 +2,18 @@ package com.github.gypsyjr777
 
 import androidx.compose.runtime.*
 import com.github.gypsyjr777.model.LabDTO
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
+
+// Создаем объект для управления глобальными событиями приложения
+object AppEvents {
+    private val _authResetEvent = MutableSharedFlow<Unit>()
+    val authResetEvent = _authResetEvent.asSharedFlow()
+    
+    suspend fun triggerAuthReset() {
+        _authResetEvent.emit(Unit)
+    }
+}
 
 @Composable
 fun App() {
@@ -10,6 +22,18 @@ fun App() {
     var isStaff by remember { mutableStateOf(false) }
     var selectedLab by remember { mutableStateOf<LabDTO?>(null) }
     var currentScreen by remember { mutableStateOf("main") }
+    
+    // Слушаем событие сброса аутентификации
+    LaunchedEffect(Unit) {
+        AppEvents.authResetEvent.collect {
+            // Сбрасываем состояние авторизации
+            AuthInfo.resetAuthentication()
+            isLoggedIn = false
+            isStaff = false
+            selectedLab = null
+            currentScreen = "main"
+        }
+    }
 
     when {
         // Сначала показываем экран настройки сервера

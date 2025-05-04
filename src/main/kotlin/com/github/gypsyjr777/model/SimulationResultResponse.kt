@@ -20,7 +20,7 @@ data class SimulationResultResponse(
     /**
      * Данные результатов симуляции
      */
-    val data: Map<String, Any>,
+    val data: Map<String, Any>?,
     
     /**
      * Сообщение о результате симуляции

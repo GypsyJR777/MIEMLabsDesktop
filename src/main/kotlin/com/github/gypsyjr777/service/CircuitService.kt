@@ -40,6 +40,11 @@ class CircuitService {
         data class Error(val message: String) : VerificationResult()
         
         /**
+         * Ошибка аутентификации
+         */
+        object Unauthorized : VerificationResult()
+        
+        /**
          * Исключение при проверке схемы
          * @param throwable исключение, возникшее при проверке
          */
@@ -98,7 +103,7 @@ class CircuitService {
                             com.github.gypsyjr777.model.SimulationResultResponse::class.java
                         )
                         
-                        if (simulationResult.success) {
+                        if (simulationResult.success && simulationResult.data != null) {
                             VerificationResult.Success(
                                 message = simulationResult.message,
                                 simulationData = simulationResult.data
@@ -108,11 +113,14 @@ class CircuitService {
                         }
                     } catch (e: Exception) {
                         // Если не смогли распарсить ответ как SimulationResultResponse
-                        VerificationResult.Success("Схема успешно проверена!")
+                        VerificationResult.Error("Ошибка при обработке ответа сервера: ${e.message}")
                     }
                 }
                 HttpStatusCode.BadRequest -> {
                     VerificationResult.Error("Ошибка в схеме: ${response.bodyAsText()}")
+                }
+                HttpStatusCode.Unauthorized -> {
+                    VerificationResult.Unauthorized
                 }
                 else -> {
                     VerificationResult.Error("Ошибка сервера: ${response.status}")
